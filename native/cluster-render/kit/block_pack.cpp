@@ -23,7 +23,14 @@ precision highp float;
 uniform sampler2D u_image;
 uniform vec2 u_size;
 uniform float u_opacity;
+uniform vec2 u_rect;
+uniform float u_radius;
+uniform float u_feather;
 varying vec2 v_uv;
+float sdRoundRect(vec2 p, vec2 b, float r) {
+    vec2 q = abs(p) - b + vec2(r);
+    return min(max(q.x, q.y), 0.0) + length(max(q, vec2(0.0))) - r;
+}
 float byte_of(float s) { return floor(s * 255.0 + 0.5); }
 vec3 rgb565(float lo, float hi) {
     float v = hi * 256.0 + lo;
@@ -45,7 +52,10 @@ void main() {
     float div = q.x < 1.0 ? 1.0 : q.x < 2.0 ? 4.0 : q.x < 3.0 ? 16.0 : 64.0;
     float sel = mod(floor(row / div), 4.0);
     vec3 c = sel < 0.5 ? c0 : sel < 1.5 ? c1 : sel < 2.5 ? (2.0 * c0 + c1) / 3.0 : (c0 + 2.0 * c1) / 3.0;
-    gl_FragColor = vec4(c, u_opacity);
+    vec2 half = u_rect * 0.5;
+    float d = sdRoundRect(v_uv * u_rect - half, half, u_radius);
+    float mask = 1.0 - smoothstep(0.0, max(u_feather, 0.5), d);
+    gl_FragColor = vec4(c, u_opacity * mask);
 })";
 
 namespace {

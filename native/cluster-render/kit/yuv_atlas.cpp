@@ -104,7 +104,14 @@ precision highp float;
 uniform sampler2D u_image;
 uniform vec2 u_size;
 uniform float u_opacity;
+uniform vec2 u_rect;
+uniform float u_radius;
+uniform float u_feather;
 varying vec2 v_uv;
+float sdRoundRect(vec2 p, vec2 b, float r) {
+    vec2 q = abs(p) - b + vec2(r);
+    return min(max(q.x, q.y), 0.0) + length(max(q, vec2(0.0))) - r;
+}
 void main() {
     vec2 l = v_uv * u_size;
     float th = u_size.y * 1.5;
@@ -112,8 +119,11 @@ void main() {
     float y = texture2D(u_image, vec2(v_uv.x, clamp(l.y, 0.5, u_size.y - 0.5) / th)).r;
     float u = texture2D(u_image, vec2(c.x / u_size.x, (u_size.y + c.y) / th)).r - 128.0 / 255.0;
     float v = texture2D(u_image, vec2((u_size.x * 0.5 + c.x) / u_size.x, (u_size.y + c.y) / th)).r - 128.0 / 255.0;
-    vec3 rgb = vec3(y + 1.402 * v, y - 0.344136 * u - 0.714136 * v, y + 1.772 * u);
-    gl_FragColor = vec4(clamp(rgb, 0.0, 1.0), u_opacity);
+    vec3 rgb = clamp(vec3(y + 1.402 * v, y - 0.344136 * u - 0.714136 * v, y + 1.772 * u), 0.0, 1.0);
+    vec2 half = u_rect * 0.5;
+    float d = sdRoundRect(v_uv * u_rect - half, half, u_radius);
+    float mask = 1.0 - smoothstep(0.0, max(u_feather, 0.5), d);
+    gl_FragColor = vec4(rgb, u_opacity * mask);
 })";
 
 namespace {

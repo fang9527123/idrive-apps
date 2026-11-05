@@ -11,6 +11,13 @@
 
 namespace crs {
 
+namespace {
+/* Rounded corners and soft edge of the video's drawn rect, in pixels.
+ * MVP: fixed values; adjust these and rebuild to tune. */
+const float kCornerRadius = 70.0f;
+const float kCornerFeather = 26.0f;
+}
+
 using crk::PixelRect;
 using crk::UploadPlan;
 
@@ -97,10 +104,15 @@ bool VideoLayer::attach(Graph *g, int64_t now_ms, std::string *err)
     drawn_ = false;
 
     const float size[2] = {(float)p_.w, (float)p_.h}, zero = 0.0f;
+    const float rect[2] = {(float)params.rect.w, (float)params.rect.h};
+    const float radius = kCornerRadius, feather = kCornerFeather;
     atlas_buf_ = g->buffer(TexFormat::R8, p_.w, atlas_h_, Sampling::Bilinear);
     atlas_quad_ = atlas_buf_ ? g->quad(atlas_effect_, params.rect) : 0;
     bool good = atlas_quad_ && g->turn(atlas_quad_, params.turn()) && g->texture(atlas_quad_, "u_image", atlas_buf_) &&
                 g->uniform(atlas_quad_, "u_size", size, 2) && g->uniform(atlas_quad_, "u_opacity", &zero, 1) &&
+                g->uniform(atlas_quad_, "u_rect", rect, 2) &&
+                g->uniform(atlas_quad_, "u_radius", &radius, 1) &&
+                g->uniform(atlas_quad_, "u_feather", &feather, 1) &&
                 g->show(atlas_quad_, false) && g->order(atlas_quad_, order_);
     if (good && p_.pan_blocks) {
         const uint32_t bw = crk::block_texels_w(p_.w), bh = crk::block_texels_h(p_.h);
@@ -109,6 +121,9 @@ bool VideoLayer::attach(Graph *g, int64_t now_ms, std::string *err)
         block_quad_ = good ? g->quad(block_effect_, params.rect) : 0;
         good = block_quad_ && g->turn(block_quad_, params.turn()) && g->texture(block_quad_, "u_image", block_buf_[0]) &&
                g->uniform(block_quad_, "u_size", size, 2) && g->uniform(block_quad_, "u_opacity", &zero, 1) &&
+               g->uniform(block_quad_, "u_rect", rect, 2) &&
+               g->uniform(block_quad_, "u_radius", &radius, 1) &&
+               g->uniform(block_quad_, "u_feather", &feather, 1) &&
                g->show(block_quad_, false) && g->order(block_quad_, order_ + 1);
         block_bank_ = 0;
     }
@@ -188,6 +203,16 @@ void VideoLayer::place()
     if (block_quad_) {
         g_->place(block_quad_, params.rect);
         g_->turn(block_quad_, params.turn());
+    }
+    const float rect[2] = {(float)params.rect.w, (float)params.rect.h};
+    const float radius = kCornerRadius, feather = kCornerFeather;
+    g_->uniform(atlas_quad_, "u_rect", rect, 2);
+    g_->uniform(atlas_quad_, "u_radius", &radius, 1);
+    g_->uniform(atlas_quad_, "u_feather", &feather, 1);
+    if (block_quad_) {
+        g_->uniform(block_quad_, "u_rect", rect, 2);
+        g_->uniform(block_quad_, "u_radius", &radius, 1);
+        g_->uniform(block_quad_, "u_feather", &feather, 1);
     }
     set_opacity();
 }
