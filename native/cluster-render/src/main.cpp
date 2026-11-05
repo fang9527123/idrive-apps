@@ -36,7 +36,13 @@
 using namespace crs;
 
 namespace crs {
-void set_video_corner_defaults(float radius, float feather);
+float kCornerRadius = 120.0f;
+float kCornerFeather = 50.0f;
+void set_video_corner_defaults(float radius, float feather)
+{
+    kCornerRadius = radius;
+    kCornerFeather = feather;
+}
 }
 
 /* component.json's version, given by the target build. */
