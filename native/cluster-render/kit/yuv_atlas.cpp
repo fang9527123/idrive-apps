@@ -123,8 +123,8 @@ void main() {
     float v = texture2D(u_image, vec2((u_size.x * 0.5 + c.x) / u_size.x, (u_size.y + c.y) / th)).r - 128.0 / 255.0;
     vec3 rgb = clamp(vec3(y + 1.402 * v, y - 0.344136 * u - 0.714136 * v, y + 1.772 * u), 0.0, 1.0);
     vec2 hs = u_rect * 0.5;
-    vec2 p = v_uv * u_rect - hs;
-    float d = sdRoundRect(p, hs, u_radius);
+    vec2 pos = v_uv * u_rect - hs;
+    float d = sdRoundRect(pos, hs, u_radius);
     float mask = 1.0 - smoothstep(0.0, max(u_feather, 0.5), d);
     float dl = length(v_uv * u_rect - u_gauge_left.xy) - u_gauge_left.z;
     float dr = length(v_uv * u_rect - u_gauge_right.xy) - u_gauge_right.z;

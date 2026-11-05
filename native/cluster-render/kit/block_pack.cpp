@@ -55,8 +55,8 @@ void main() {
     float sel = mod(floor(row / div), 4.0);
     vec3 c = sel < 0.5 ? c0 : sel < 1.5 ? c1 : sel < 2.5 ? (2.0 * c0 + c1) / 3.0 : (c0 + 2.0 * c1) / 3.0;
     vec2 hs = u_rect * 0.5;
-    vec2 p = v_uv * u_rect - hs;
-    float d = sdRoundRect(p, hs, u_radius);
+    vec2 pos = v_uv * u_rect - hs;
+    float d = sdRoundRect(pos, hs, u_radius);
     float mask = 1.0 - smoothstep(0.0, max(u_feather, 0.5), d);
     float dl = length(v_uv * u_rect - u_gauge_left.xy) - u_gauge_left.z;
     float dr = length(v_uv * u_rect - u_gauge_right.xy) - u_gauge_right.z;
