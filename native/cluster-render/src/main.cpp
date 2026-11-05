@@ -35,6 +35,10 @@
 
 using namespace crs;
 
+namespace crs {
+void set_video_corner_defaults(float radius, float feather);
+}
+
 /* component.json's version, given by the target build. */
 #ifndef CR_VERSION
 #define CR_VERSION ""
@@ -114,6 +118,8 @@ void define_keys(cld::Config *cfg)
     cfg->define("guard_path", "/var/opt/cluster-render/state/guard.txt");
     cfg->define("log_file", "/var/opt/cluster-render/log/cluster-render.log");
     cfg->define("log_file_kb", "512");
+    cfg->define("video_corner_radius", "120");
+    cfg->define("video_feather", "50");
     /* The shared Config's defaults are cluster-demo's (src/config.cpp). */
     std::string err;
     cfg->set_pair("socket_path=/dev/shm/cluster-render/render.sock", &err);
@@ -215,6 +221,8 @@ bool crs::service_config(const cld::Config &cfg, int generation, ServiceConfig *
     if (cfg.has("log_file"))
         cld::log_to_file(cfg.str("log_file"), cld::log_file_cap(cfg.num("log_file_kb")), "cluster-render", CR_VERSION);
     ServiceConfig &sc = *out;
+    crs::set_video_corner_defaults((float)cfg.num("video_corner_radius"),
+                                   (float)cfg.num("video_feather"));
     if (!load_targets(cfg, generation, &sc.targets, err))
         return false;
     const long max_kb = cfg.num("upload_kb_per_s"), step_kb = cfg.num("upload_step_kb_per_s");

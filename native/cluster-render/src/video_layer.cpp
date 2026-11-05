@@ -14,8 +14,14 @@ namespace crs {
 namespace {
 /* Rounded corners and soft edge of the video's drawn rect, in pixels.
  * MVP: fixed values; adjust these and rebuild to tune. */
-const float kCornerRadius = 70.0f;
-const float kCornerFeather = 26.0f;
+float kCornerRadius = 120.0f;
+float kCornerFeather = 50.0f;
+}
+
+void set_video_corner_defaults(float radius, float feather)
+{
+    kCornerRadius = radius;
+    kCornerFeather = feather;
 }
 
 using crk::PixelRect;
