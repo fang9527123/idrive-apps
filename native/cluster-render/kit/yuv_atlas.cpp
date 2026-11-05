@@ -107,6 +107,8 @@ uniform float u_opacity;
 uniform vec2 u_rect;
 uniform float u_radius;
 uniform float u_feather;
+uniform vec3 u_gauge_left;
+uniform vec3 u_gauge_right;
 varying vec2 v_uv;
 float sdRoundRect(vec2 p, vec2 b, float r) {
     vec2 q = abs(p) - b + vec2(r);
@@ -121,8 +123,14 @@ void main() {
     float v = texture2D(u_image, vec2((u_size.x * 0.5 + c.x) / u_size.x, (u_size.y + c.y) / th)).r - 128.0 / 255.0;
     vec3 rgb = clamp(vec3(y + 1.402 * v, y - 0.344136 * u - 0.714136 * v, y + 1.772 * u), 0.0, 1.0);
     vec2 hs = u_rect * 0.5;
-    float d = sdRoundRect(v_uv * u_rect - hs, hs, u_radius);
+    vec2 p = v_uv * u_rect - hs;
+    float d = sdRoundRect(p, hs, u_radius);
     float mask = 1.0 - smoothstep(0.0, max(u_feather, 0.5), d);
+    float dl = length(v_uv * u_rect - u_gauge_left.xy) - u_gauge_left.z;
+    float dr = length(v_uv * u_rect - u_gauge_right.xy) - u_gauge_right.z;
+    float cl = mix(1.0, smoothstep(0.0, max(u_feather, 0.5), dl), step(0.5, u_gauge_left.z));
+    float cr = mix(1.0, smoothstep(0.0, max(u_feather, 0.5), dr), step(0.5, u_gauge_right.z));
+    mask *= cl * cr;
     gl_FragColor = vec4(rgb, u_opacity * mask);
 })";
 

@@ -36,6 +36,10 @@
 using namespace crs;
 
 namespace crs {
+void set_video_gauge_defaults(float lx, float ly, float lr, float rx, float ry, float rr);
+}
+
+namespace crs {
 float kCornerRadius = 120.0f;
 float kCornerFeather = 50.0f;
 void set_video_corner_defaults(float radius, float feather)
@@ -126,6 +130,12 @@ void define_keys(cld::Config *cfg)
     cfg->define("log_file_kb", "512");
     cfg->define("video_corner_radius", "120");
     cfg->define("video_feather", "50");
+    cfg->define("gauge_left_x", "0");
+    cfg->define("gauge_left_y", "0");
+    cfg->define("gauge_left_r", "0");
+    cfg->define("gauge_right_x", "0");
+    cfg->define("gauge_right_y", "0");
+    cfg->define("gauge_right_r", "0");
     /* The shared Config's defaults are cluster-demo's (src/config.cpp). */
     std::string err;
     cfg->set_pair("socket_path=/dev/shm/cluster-render/render.sock", &err);
@@ -229,6 +239,9 @@ bool crs::service_config(const cld::Config &cfg, int generation, ServiceConfig *
     ServiceConfig &sc = *out;
     crs::set_video_corner_defaults((float)cfg.num("video_corner_radius"),
                                    (float)cfg.num("video_feather"));
+    crs::set_video_gauge_defaults((float)cfg.num("gauge_left_x"), (float)cfg.num("gauge_left_y"),
+                                  (float)cfg.num("gauge_left_r"), (float)cfg.num("gauge_right_x"),
+                                  (float)cfg.num("gauge_right_y"), (float)cfg.num("gauge_right_r"));
     if (!load_targets(cfg, generation, &sc.targets, err))
         return false;
     const long max_kb = cfg.num("upload_kb_per_s"), step_kb = cfg.num("upload_step_kb_per_s");

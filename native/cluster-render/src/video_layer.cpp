@@ -14,6 +14,13 @@ namespace crs {
 extern float kCornerRadius;
 extern float kCornerFeather;
 
+extern float kGaugeLeftX;
+extern float kGaugeLeftY;
+extern float kGaugeLeftR;
+extern float kGaugeRightX;
+extern float kGaugeRightY;
+extern float kGaugeRightR;
+
 using crk::PixelRect;
 using crk::UploadPlan;
 
@@ -102,6 +109,8 @@ bool VideoLayer::attach(Graph *g, int64_t now_ms, std::string *err)
     const float size[2] = {(float)p_.w, (float)p_.h}, zero = 0.0f;
     const float rect[2] = {(float)params.rect.w, (float)params.rect.h};
     const float radius = kCornerRadius, feather = kCornerFeather;
+    const float gl[3] = {kGaugeLeftX - (float)params.rect.x, kGaugeLeftY - (float)params.rect.y, kGaugeLeftR};
+    const float gr[3] = {kGaugeRightX - (float)params.rect.x, kGaugeRightY - (float)params.rect.y, kGaugeRightR};
     atlas_buf_ = g->buffer(TexFormat::R8, p_.w, atlas_h_, Sampling::Bilinear);
     atlas_quad_ = atlas_buf_ ? g->quad(atlas_effect_, params.rect) : 0;
     bool good = atlas_quad_ && g->turn(atlas_quad_, params.turn()) && g->texture(atlas_quad_, "u_image", atlas_buf_) &&
@@ -109,6 +118,8 @@ bool VideoLayer::attach(Graph *g, int64_t now_ms, std::string *err)
                 g->uniform(atlas_quad_, "u_rect", rect, 2) &&
                 g->uniform(atlas_quad_, "u_radius", &radius, 1) &&
                 g->uniform(atlas_quad_, "u_feather", &feather, 1) &&
+                g->uniform(atlas_quad_, "u_gauge_left", gl, 3) &&
+                g->uniform(atlas_quad_, "u_gauge_right", gr, 3) &&
                 g->show(atlas_quad_, false) && g->order(atlas_quad_, order_);
     if (good && p_.pan_blocks) {
         const uint32_t bw = crk::block_texels_w(p_.w), bh = crk::block_texels_h(p_.h);
@@ -120,6 +131,8 @@ bool VideoLayer::attach(Graph *g, int64_t now_ms, std::string *err)
                g->uniform(block_quad_, "u_rect", rect, 2) &&
                g->uniform(block_quad_, "u_radius", &radius, 1) &&
                g->uniform(block_quad_, "u_feather", &feather, 1) &&
+               g->uniform(block_quad_, "u_gauge_left", gl, 3) &&
+               g->uniform(block_quad_, "u_gauge_right", gr, 3) &&
                g->show(block_quad_, false) && g->order(block_quad_, order_ + 1);
         block_bank_ = 0;
     }
@@ -202,13 +215,19 @@ void VideoLayer::place()
     }
     const float rect[2] = {(float)params.rect.w, (float)params.rect.h};
     const float radius = kCornerRadius, feather = kCornerFeather;
+    const float gl[3] = {kGaugeLeftX - (float)params.rect.x, kGaugeLeftY - (float)params.rect.y, kGaugeLeftR};
+    const float gr[3] = {kGaugeRightX - (float)params.rect.x, kGaugeRightY - (float)params.rect.y, kGaugeRightR};
     g_->uniform(atlas_quad_, "u_rect", rect, 2);
     g_->uniform(atlas_quad_, "u_radius", &radius, 1);
     g_->uniform(atlas_quad_, "u_feather", &feather, 1);
+    g_->uniform(atlas_quad_, "u_gauge_left", gl, 3);
+    g_->uniform(atlas_quad_, "u_gauge_right", gr, 3);
     if (block_quad_) {
         g_->uniform(block_quad_, "u_rect", rect, 2);
         g_->uniform(block_quad_, "u_radius", &radius, 1);
         g_->uniform(block_quad_, "u_feather", &feather, 1);
+        g_->uniform(block_quad_, "u_gauge_left", gl, 3);
+        g_->uniform(block_quad_, "u_gauge_right", gr, 3);
     }
     set_opacity();
 }

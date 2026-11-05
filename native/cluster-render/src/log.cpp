@@ -167,3 +167,23 @@ void log_lines_since(uint64_t *seq, std::vector<std::string> *out)
 }
 
 }  // namespace cld
+
+
+/* Gauge circles carved out of the map with feathered edges. */
+namespace crs {
+float kGaugeLeftX = 0.0f;
+float kGaugeLeftY = 0.0f;
+float kGaugeLeftR = 0.0f;
+float kGaugeRightX = 0.0f;
+float kGaugeRightY = 0.0f;
+float kGaugeRightR = 0.0f;
+void set_video_gauge_defaults(float lx, float ly, float lr, float rx, float ry, float rr)
+{
+    kGaugeLeftX = lx;
+    kGaugeLeftY = ly;
+    kGaugeLeftR = lr;
+    kGaugeRightX = rx;
+    kGaugeRightY = ry;
+    kGaugeRightR = rr;
+}
+}
