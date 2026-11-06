@@ -37,6 +37,7 @@ using namespace crs;
 
 namespace crs {
 void set_video_gauge_defaults(float lx, float ly, float lr, float rx, float ry, float rr);
+void set_video_mask_defaults(float on, const float *pts);
 }
 
 namespace crs {
@@ -136,6 +137,7 @@ void define_keys(cld::Config *cfg)
     cfg->define("gauge_right_x", "0");
     cfg->define("gauge_right_y", "0");
     cfg->define("gauge_right_r", "0");
+    cfg->define("mask_points", "");
     /* The shared Config's defaults are cluster-demo's (src/config.cpp). */
     std::string err;
     cfg->set_pair("socket_path=/dev/shm/cluster-render/render.sock", &err);
@@ -242,6 +244,33 @@ bool crs::service_config(const cld::Config &cfg, int generation, ServiceConfig *
     crs::set_video_gauge_defaults((float)cfg.num("gauge_left_x"), (float)cfg.num("gauge_left_y"),
                                   (float)cfg.num("gauge_left_r"), (float)cfg.num("gauge_right_x"),
                                   (float)cfg.num("gauge_right_y"), (float)cfg.num("gauge_right_r"));
+    {
+        std::string mp = cfg.str("mask_points");
+        float pts[64];
+        std::memset(pts, 0, sizeof pts);
+        float on = 0.0f;
+        if (!mp.empty()) {
+            const char *s = mp.c_str();
+            int n = 0;
+            while (*s && n < 32) {
+                while (*s == ' ' || *s == '\t') s++;
+                float x = 0.0f, y = 0.0f;
+                if (std::sscanf(s, "%f,%f", &x, &y) != 2) break;
+                pts[2 * n] = x;
+                pts[2 * n + 1] = y;
+                n++;
+                while (*s && *s != ' ' && *s != '\t') s++;
+            }
+            if (n >= 3) {
+                on = 1.0f;
+                for (int i = n; i < 32; i++) {
+                    pts[2 * i] = pts[2 * (n - 1)];
+                    pts[2 * i + 1] = pts[2 * (n - 1) + 1];
+                }
+            }
+        }
+        crs::set_video_mask_defaults(on, pts);
+    }
     if (!load_targets(cfg, generation, &sc.targets, err))
         return false;
     const long max_kb = cfg.num("upload_kb_per_s"), step_kb = cfg.num("upload_step_kb_per_s");

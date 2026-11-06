@@ -187,3 +187,16 @@ void set_video_gauge_defaults(float lx, float ly, float lr, float rx, float ry, 
     kGaugeRightR = rr;
 }
 }
+
+
+/* Freeform polygon mask for the map (drawn shape). */
+namespace crs {
+float kMaskOn = 0.0f;
+float kMaskPts[64] = {0.0f};
+void set_video_mask_defaults(float on, const float *pts)
+{
+    kMaskOn = on;
+    for (int i = 0; i < 64; i++)
+        kMaskPts[i] = pts ? pts[i] : 0.0f;
+}
+}

@@ -109,10 +109,27 @@ uniform float u_radius;
 uniform float u_feather;
 uniform vec3 u_gauge_left;
 uniform vec3 u_gauge_right;
+uniform float u_mask_on;
+uniform vec2 u_mask_pts[32];
 varying vec2 v_uv;
 float sdRoundRect(vec2 p, vec2 b, float r) {
     vec2 q = abs(p) - b + vec2(r);
     return min(max(q.x, q.y), 0.0) + length(max(q, vec2(0.0))) - r;
+}
+float sdPolygon(vec2 p, vec2 v[32]) {
+    float d = dot(p - v[0], p - v[0]);
+    float s = 1.0;
+    for (int i = 0, j = 31; i < 32; j = i, i++) {
+        vec2 e = v[j] - v[i];
+        vec2 w = p - v[i];
+        vec2 b = w - e * clamp(dot(w, e) / max(dot(e, e), 0.000001), 0.0, 1.0);
+        d = min(d, dot(b, b));
+        bool c1 = p.y >= v[i].y;
+        bool c2 = p.y < v[j].y;
+        bool c3 = e.x * w.y > e.y * w.x;
+        if ((c1 && c2 && c3) || (!c1 && !c2 && !c3)) s = -s;
+    }
+    return s * sqrt(d);
 }
 void main() {
     vec2 l = v_uv * u_size;
@@ -124,13 +141,20 @@ void main() {
     vec3 rgb = clamp(vec3(y + 1.402 * v, y - 0.344136 * u - 0.714136 * v, y + 1.772 * u), 0.0, 1.0);
     vec2 hs = u_rect * 0.5;
     vec2 pos = v_uv * u_rect - hs;
-    float d = sdRoundRect(pos, hs, u_radius);
+    float d;
+    if (u_mask_on > 0.5) {
+        d = sdPolygon(v_uv * u_rect, u_mask_pts);
+    } else {
+        d = sdRoundRect(pos, hs, u_radius);
+    }
     float mask = 1.0 - smoothstep(0.0, max(u_feather, 0.5), d);
-    float dl = length(v_uv * u_rect - u_gauge_left.xy) - u_gauge_left.z;
-    float dr = length(v_uv * u_rect - u_gauge_right.xy) - u_gauge_right.z;
-    float cl = mix(1.0, smoothstep(0.0, max(u_feather, 0.5), dl), step(0.5, u_gauge_left.z));
-    float cr = mix(1.0, smoothstep(0.0, max(u_feather, 0.5), dr), step(0.5, u_gauge_right.z));
-    mask *= cl * cr;
+    if (u_mask_on <= 0.5) {
+        float dl = length(v_uv * u_rect - u_gauge_left.xy) - u_gauge_left.z;
+        float dr = length(v_uv * u_rect - u_gauge_right.xy) - u_gauge_right.z;
+        float cl = mix(1.0, smoothstep(0.0, max(u_feather, 0.5), dl), step(0.5, u_gauge_left.z));
+        float cr = mix(1.0, smoothstep(0.0, max(u_feather, 0.5), dr), step(0.5, u_gauge_right.z));
+        mask *= cl * cr;
+    }
     gl_FragColor = vec4(rgb, u_opacity * mask);
 })";
 

@@ -21,6 +21,9 @@ extern float kGaugeRightX;
 extern float kGaugeRightY;
 extern float kGaugeRightR;
 
+extern float kMaskOn;
+extern float kMaskPts[64];
+
 using crk::PixelRect;
 using crk::UploadPlan;
 
@@ -120,6 +123,8 @@ bool VideoLayer::attach(Graph *g, int64_t now_ms, std::string *err)
                 g->uniform(atlas_quad_, "u_feather", &feather, 1) &&
                 g->uniform(atlas_quad_, "u_gauge_left", gl, 3) &&
                 g->uniform(atlas_quad_, "u_gauge_right", gr, 3) &&
+                g->uniform(atlas_quad_, "u_mask_on", &kMaskOn, 1) &&
+                g->uniform_array(atlas_quad_, "u_mask_pts", UniformType::Vec2, kMaskPts, 32) &&
                 g->show(atlas_quad_, false) && g->order(atlas_quad_, order_);
     if (good && p_.pan_blocks) {
         const uint32_t bw = crk::block_texels_w(p_.w), bh = crk::block_texels_h(p_.h);
@@ -133,6 +138,8 @@ bool VideoLayer::attach(Graph *g, int64_t now_ms, std::string *err)
                g->uniform(block_quad_, "u_feather", &feather, 1) &&
                g->uniform(block_quad_, "u_gauge_left", gl, 3) &&
                g->uniform(block_quad_, "u_gauge_right", gr, 3) &&
+               g->uniform(block_quad_, "u_mask_on", &kMaskOn, 1) &&
+               g->uniform_array(block_quad_, "u_mask_pts", UniformType::Vec2, kMaskPts, 32) &&
                g->show(block_quad_, false) && g->order(block_quad_, order_ + 1);
         block_bank_ = 0;
     }
@@ -222,12 +229,16 @@ void VideoLayer::place()
     g_->uniform(atlas_quad_, "u_feather", &feather, 1);
     g_->uniform(atlas_quad_, "u_gauge_left", gl, 3);
     g_->uniform(atlas_quad_, "u_gauge_right", gr, 3);
+    g_->uniform(atlas_quad_, "u_mask_on", &kMaskOn, 1);
+    g_->uniform_array(atlas_quad_, "u_mask_pts", UniformType::Vec2, kMaskPts, 32);
     if (block_quad_) {
         g_->uniform(block_quad_, "u_rect", rect, 2);
         g_->uniform(block_quad_, "u_radius", &radius, 1);
         g_->uniform(block_quad_, "u_feather", &feather, 1);
         g_->uniform(block_quad_, "u_gauge_left", gl, 3);
         g_->uniform(block_quad_, "u_gauge_right", gr, 3);
+        g_->uniform(block_quad_, "u_mask_on", &kMaskOn, 1);
+        g_->uniform_array(block_quad_, "u_mask_pts", UniformType::Vec2, kMaskPts, 32);
     }
     set_opacity();
 }
