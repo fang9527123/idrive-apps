@@ -59,6 +59,7 @@ public:
     /* A frame's atlas, frame_bytes() long; its levels are rounded on the
      * way in. Replaces a frame not yet written. */
     void offer(const uint8_t *atlas, int64_t now_ms);
+    void set_panel_target(bool on) { panel_target_ = on; }
     /* A frame that is the last one offered again, byte for byte: staged,
      * counted and kept live as that frame would be, with nothing to copy and
      * no plan to make unless tiles are due to settle. */
@@ -108,6 +109,7 @@ private:
     void drop_objects();
 
     VideoParams p_;
+    bool panel_target_ = false;
     int atlas_effect_, block_effect_;
     size_t atlas_bytes_;
     uint32_t atlas_h_;

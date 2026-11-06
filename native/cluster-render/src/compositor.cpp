@@ -218,6 +218,7 @@ uint32_t Compositor::add_video(uint64_t owner, int target, const LayerParams &lp
         return 0;
     Entry &e = layers_[id];
     e.layer.reset(new VideoLayer(id, target, ++seq_, pacer_for(target), atlas_fx_, block_fx_, vp, now_ms));
+    static_cast<VideoLayer *>(e.layer.get())->set_panel_target(slots_->targets()[target].name == "panel");
     e.layer->params = lp;
     e.owner = owner;
     e.pixel_bytes = bytes;

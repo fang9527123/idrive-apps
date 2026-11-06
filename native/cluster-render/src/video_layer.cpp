@@ -116,7 +116,7 @@ bool VideoLayer::attach(Graph *g, int64_t now_ms, std::string *err)
     const float radius = kCornerRadius, feather = kCornerFeather;
     const float gl[3] = {kGaugeLeftX - (float)params.rect.x, kGaugeLeftY - (float)params.rect.y, kGaugeLeftR};
     const float gr[3] = {kGaugeRightX - (float)params.rect.x, kGaugeRightY - (float)params.rect.y, kGaugeRightR};
-    const float mask_on = (kMaskOn > 0.5f && (unsigned)params.rect.w == kMaskW && (unsigned)params.rect.h == kMaskH) ? 1.0f : 0.0f;
+    const float mask_on = (kMaskOn > 0.5f && panel_target_) ? 1.0f : 0.0f;
     atlas_buf_ = g->buffer(TexFormat::R8, p_.w, atlas_h_, Sampling::Bilinear);
     atlas_quad_ = atlas_buf_ ? g->quad(atlas_effect_, params.rect) : 0;
     bool good = atlas_quad_ && g->turn(atlas_quad_, params.turn()) && g->texture(atlas_quad_, "u_image", atlas_buf_) &&
@@ -227,7 +227,7 @@ void VideoLayer::place()
     const float radius = kCornerRadius, feather = kCornerFeather;
     const float gl[3] = {kGaugeLeftX - (float)params.rect.x, kGaugeLeftY - (float)params.rect.y, kGaugeLeftR};
     const float gr[3] = {kGaugeRightX - (float)params.rect.x, kGaugeRightY - (float)params.rect.y, kGaugeRightR};
-    const float mask_on = (kMaskOn > 0.5f && (unsigned)params.rect.w == kMaskW && (unsigned)params.rect.h == kMaskH) ? 1.0f : 0.0f;
+    const float mask_on = (kMaskOn > 0.5f && panel_target_) ? 1.0f : 0.0f;
     g_->uniform(atlas_quad_, "u_rect", rect, 2);
     g_->uniform(atlas_quad_, "u_radius", &radius, 1);
     g_->uniform(atlas_quad_, "u_feather", &feather, 1);
