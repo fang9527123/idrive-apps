@@ -37,7 +37,7 @@ using namespace crs;
 
 namespace crs {
 void set_video_gauge_defaults(float lx, float ly, float lr, float rx, float ry, float rr);
-void set_video_mask_defaults(float on, const float *pts);
+void set_video_mask_defaults(float on, unsigned w, unsigned h, const float *pts);
 }
 
 namespace crs {
@@ -138,6 +138,7 @@ void define_keys(cld::Config *cfg)
     cfg->define("gauge_right_y", "0");
     cfg->define("gauge_right_r", "0");
     cfg->define("mask_points", "");
+    cfg->define("mask_size", "");
     /* The shared Config's defaults are cluster-demo's (src/config.cpp). */
     std::string err;
     cfg->set_pair("socket_path=/dev/shm/cluster-render/render.sock", &err);
@@ -249,6 +250,8 @@ bool crs::service_config(const cld::Config &cfg, int generation, ServiceConfig *
         float pts[64];
         std::memset(pts, 0, sizeof pts);
         float on = 0.0f;
+        unsigned mw = 0, mh = 0;
+        cfg.size("mask_size", &mw, &mh);
         if (!mp.empty()) {
             const char *s = mp.c_str();
             int n = 0;
@@ -269,7 +272,7 @@ bool crs::service_config(const cld::Config &cfg, int generation, ServiceConfig *
                 }
             }
         }
-        crs::set_video_mask_defaults(on, pts);
+        crs::set_video_mask_defaults(on, mw, mh, pts);
     }
     if (!load_targets(cfg, generation, &sc.targets, err))
         return false;

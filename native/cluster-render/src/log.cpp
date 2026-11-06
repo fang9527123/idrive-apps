@@ -193,9 +193,13 @@ void set_video_gauge_defaults(float lx, float ly, float lr, float rx, float ry, 
 namespace crs {
 float kMaskOn = 0.0f;
 float kMaskPts[64] = {0.0f};
-void set_video_mask_defaults(float on, const float *pts)
+unsigned kMaskW = 0;
+unsigned kMaskH = 0;
+void set_video_mask_defaults(float on, unsigned w, unsigned h, const float *pts)
 {
     kMaskOn = on;
+    kMaskW = w;
+    kMaskH = h;
     for (int i = 0; i < 64; i++)
         kMaskPts[i] = pts ? pts[i] : 0.0f;
 }

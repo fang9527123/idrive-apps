@@ -23,6 +23,8 @@ extern float kGaugeRightR;
 
 extern float kMaskOn;
 extern float kMaskPts[64];
+extern unsigned kMaskW;
+extern unsigned kMaskH;
 
 using crk::PixelRect;
 using crk::UploadPlan;
@@ -114,6 +116,7 @@ bool VideoLayer::attach(Graph *g, int64_t now_ms, std::string *err)
     const float radius = kCornerRadius, feather = kCornerFeather;
     const float gl[3] = {kGaugeLeftX - (float)params.rect.x, kGaugeLeftY - (float)params.rect.y, kGaugeLeftR};
     const float gr[3] = {kGaugeRightX - (float)params.rect.x, kGaugeRightY - (float)params.rect.y, kGaugeRightR};
+    const float mask_on = (kMaskOn > 0.5f && (unsigned)params.rect.w == kMaskW && (unsigned)params.rect.h == kMaskH) ? 1.0f : 0.0f;
     atlas_buf_ = g->buffer(TexFormat::R8, p_.w, atlas_h_, Sampling::Bilinear);
     atlas_quad_ = atlas_buf_ ? g->quad(atlas_effect_, params.rect) : 0;
     bool good = atlas_quad_ && g->turn(atlas_quad_, params.turn()) && g->texture(atlas_quad_, "u_image", atlas_buf_) &&
@@ -123,7 +126,7 @@ bool VideoLayer::attach(Graph *g, int64_t now_ms, std::string *err)
                 g->uniform(atlas_quad_, "u_feather", &feather, 1) &&
                 g->uniform(atlas_quad_, "u_gauge_left", gl, 3) &&
                 g->uniform(atlas_quad_, "u_gauge_right", gr, 3) &&
-                g->uniform(atlas_quad_, "u_mask_on", &kMaskOn, 1) &&
+                g->uniform(atlas_quad_, "u_mask_on", &mask_on, 1) &&
                 g->uniform_array(atlas_quad_, "u_mask_pts", UniformType::Vec2, kMaskPts, 32) &&
                 g->show(atlas_quad_, false) && g->order(atlas_quad_, order_);
     if (good && p_.pan_blocks) {
@@ -138,7 +141,7 @@ bool VideoLayer::attach(Graph *g, int64_t now_ms, std::string *err)
                g->uniform(block_quad_, "u_feather", &feather, 1) &&
                g->uniform(block_quad_, "u_gauge_left", gl, 3) &&
                g->uniform(block_quad_, "u_gauge_right", gr, 3) &&
-               g->uniform(block_quad_, "u_mask_on", &kMaskOn, 1) &&
+               g->uniform(block_quad_, "u_mask_on", &mask_on, 1) &&
                g->uniform_array(block_quad_, "u_mask_pts", UniformType::Vec2, kMaskPts, 32) &&
                g->show(block_quad_, false) && g->order(block_quad_, order_ + 1);
         block_bank_ = 0;
@@ -224,12 +227,13 @@ void VideoLayer::place()
     const float radius = kCornerRadius, feather = kCornerFeather;
     const float gl[3] = {kGaugeLeftX - (float)params.rect.x, kGaugeLeftY - (float)params.rect.y, kGaugeLeftR};
     const float gr[3] = {kGaugeRightX - (float)params.rect.x, kGaugeRightY - (float)params.rect.y, kGaugeRightR};
+    const float mask_on = (kMaskOn > 0.5f && (unsigned)params.rect.w == kMaskW && (unsigned)params.rect.h == kMaskH) ? 1.0f : 0.0f;
     g_->uniform(atlas_quad_, "u_rect", rect, 2);
     g_->uniform(atlas_quad_, "u_radius", &radius, 1);
     g_->uniform(atlas_quad_, "u_feather", &feather, 1);
     g_->uniform(atlas_quad_, "u_gauge_left", gl, 3);
     g_->uniform(atlas_quad_, "u_gauge_right", gr, 3);
-    g_->uniform(atlas_quad_, "u_mask_on", &kMaskOn, 1);
+    g_->uniform(atlas_quad_, "u_mask_on", &mask_on, 1);
     g_->uniform_array(atlas_quad_, "u_mask_pts", UniformType::Vec2, kMaskPts, 32);
     if (block_quad_) {
         g_->uniform(block_quad_, "u_rect", rect, 2);
@@ -237,7 +241,7 @@ void VideoLayer::place()
         g_->uniform(block_quad_, "u_feather", &feather, 1);
         g_->uniform(block_quad_, "u_gauge_left", gl, 3);
         g_->uniform(block_quad_, "u_gauge_right", gr, 3);
-        g_->uniform(block_quad_, "u_mask_on", &kMaskOn, 1);
+        g_->uniform(block_quad_, "u_mask_on", &mask_on, 1);
         g_->uniform_array(block_quad_, "u_mask_pts", UniformType::Vec2, kMaskPts, 32);
     }
     set_opacity();
