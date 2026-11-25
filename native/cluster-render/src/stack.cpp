@@ -34,25 +34,30 @@ Arrangement arrange(std::vector<StackItem> items)
             return a.klass < b.klass;
         if (a.z != b.z)
             return a.z < b.z;
-        return a.seq < b.seq;
+        if (a.seq != b.seq)
+            return a.seq < b.seq;
+        return a.under > b.under;
     });
     Arrangement r;
-    /* The topmost drawable exclusive layer; everything below it waits. */
+    /* The topmost drawable exclusive layer whose pixels are on the display;
+     * everything below it waits. */
     size_t floor = 0;
     for (size_t i = items.size(); i-- > 0;)
-        if (items[i].visible && items[i].ready && items[i].exclusive) {
+        if (items[i].visible && items[i].ready && items[i].exclusive && items[i].shown) {
             floor = i;
             break;
         }
     for (size_t i = 0; i < items.size(); i++) {
         const StackItem &it = items[i];
         r.order.push_back(it.id);
+        r.preload = r.preload || it.preload;
         if (it.visible && it.ready)
             (i < floor ? r.suspended : r.drawn).push_back(it.id);
         if (it.visible && (it.ready || it.prewarm)) {
             r.wanted = true;
             r.contend = r.contend || it.contend;
             r.guide_hold = r.guide_hold && it.guide_hold;
+            r.yield = r.yield && it.yield;
         }
     }
     return r;

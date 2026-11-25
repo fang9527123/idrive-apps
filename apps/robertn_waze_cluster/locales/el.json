@@ -17,13 +17,13 @@
     "Save logs": "Αποθήκευση αρχείων",
     "Not supported on this car": "Δεν υποστηρίζεται σε αυτό το όχημα",
     "Unavailable": "Μη διαθέσιμο",
-    "Untested version": "Μη δοκιμασμένη έκδοση",
     "Changed by another tool": "Τροποποιήθηκε από άλλο εργαλείο",
     "(after restart)": "(μετά την επανεκκίνηση)",
     "Status: {0}": "Κατάσταση: {0}",
     "Connecting…": "Γίνεται σύνδεση…",
     "Removed after restart": "Καταργείται μετά την επανεκκίνηση",
     "Removed — head unit kept restarting": "Καταργήθηκε — η μονάδα επανεκκινούνταν συνεχώς",
+    "Removed — Android Auto crashed": "Καταργήθηκε — το Android Auto κατέρρευσε",
     "Patched after restart": "Εφαρμόζεται μετά την επανεκκίνηση",
     "Removing patch…": "Κατάργηση διόρθωσης…",
     "Patching…": "Εφαρμογή διόρθωσης…",
@@ -36,7 +36,7 @@
     "Off": "Ανενεργό",
     "Starting…": "Εκκίνηση…",
     "Showing {0}": "Προβολή: {0}",
-    "Waze map": "χάρτης Waze",
+    "map": "χάρτης",
     "Error": "Σφάλμα",
     "Frozen": "Πάγωσε",
     "Waiting for the phone": "Αναμονή για το τηλέφωνο",
@@ -66,7 +66,7 @@
     "Not enough space": "Ανεπαρκής χώρος",
     "Too large to save": "Πολύ μεγάλο για αποθήκευση",
     "Save failed": "Η αποθήκευση απέτυχε",
-    "Waze on cluster": "Waze στα όργανα",
+    "Maps on cluster": "Χάρτες στα όργανα",
     "Show on": "Εμφάνιση σε",
     "Cluster": "Όργανα",
     "HUD (experimental)": "HUD (πειραματικό)",
@@ -92,6 +92,8 @@
     "CarPlay Wi-Fi: {0}": "Wi-Fi CarPlay: {0}",
     "5 GHz": "5 GHz",
     "2.4 GHz": "2,4 GHz",
-    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "Ο ήχος μπορεί να διακόπτεται. Στο iPhone, απενεργοποιήστε και ενεργοποιήστε ξανά το Wi-Fi."
+    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "Ο ήχος μπορεί να διακόπτεται. Στο iPhone, απενεργοποιήστε και ενεργοποιήστε ξανά το Wi-Fi.",
+    "Own settings for this driver": "Δικές ρυθμίσεις για αυτόν τον οδηγό",
+    "Keep HUD map over BMW's pop-ups": "Διατήρηση χάρτη στο HUD πάνω από τα αναδυόμενα της BMW"
   }
 }

@@ -126,6 +126,38 @@ namespace ramses
         RAMSES19_LIBRARY_OWNED(TextureSampler);
     };
 
+    class RenderBuffer : public SceneObject
+    {
+    public:
+        uint32_t getWidth() const;
+        uint32_t getHeight() const;
+        ERenderBufferType getBufferType() const;
+        ERenderBufferFormat getBufferFormat() const;
+        ERenderBufferAccessMode getAccessMode() const;
+        uint32_t getSampleCount() const;
+        RAMSES19_LIBRARY_OWNED(RenderBuffer);
+    };
+
+    class RenderTarget : public SceneObject
+    {
+    public:
+        uint32_t getWidth() const;
+        uint32_t getHeight() const;
+        RAMSES19_LIBRARY_OWNED(RenderTarget);
+    };
+
+    // A value class like EffectDescription (its constructor 0x1e7140 has the
+    // same shape: StatusObject base, impl copied to [this+0x10]); no
+    // exported destructor, so StatusObject's releases the impl.
+    class RenderTargetDescription : public StatusObject
+    {
+    public:
+        RenderTargetDescription();
+        ~RenderTargetDescription() {}
+        status_t addRenderBuffer(const RenderBuffer& renderBuffer);
+        RAMSES19_VALUE_STORAGE(RenderTargetDescription);
+    };
+
     class DataObject : public SceneObject { public: RAMSES19_LIBRARY_OWNED(DataObject); };
 
     class DataFloat : public DataObject
@@ -134,6 +166,22 @@ namespace ramses
         status_t setValue(float value);
         status_t getValue(float& value) const;
         RAMSES19_LIBRARY_OWNED(DataFloat);
+    };
+
+    class DataInt32 : public DataObject
+    {
+    public:
+        status_t setValue(int32_t value);
+        status_t getValue(int32_t& value) const;
+        RAMSES19_LIBRARY_OWNED(DataInt32);
+    };
+
+    class DataVector3f : public DataObject
+    {
+    public:
+        status_t setValue(float x, float y, float z);
+        status_t getValue(float& x, float& y, float& z) const;
+        RAMSES19_LIBRARY_OWNED(DataVector3f);
     };
 
     class DataVector2f : public DataObject
@@ -166,6 +214,7 @@ namespace ramses
         status_t setBlendingFactors(EBlendFactor srcColor, EBlendFactor destColor, EBlendFactor srcAlpha, EBlendFactor destAlpha);
         status_t getBlendingFactors(EBlendFactor& srcColor, EBlendFactor& destColor, EBlendFactor& srcAlpha, EBlendFactor& destAlpha) const;
         status_t setBlendingOperations(EBlendOperation operationColor, EBlendOperation operationAlpha);
+        status_t getBlendingOperations(EBlendOperation& operationColor, EBlendOperation& operationAlpha) const;
         status_t setDepthFunction(EDepthFunc func);
         status_t getDepthFunction(EDepthFunc& depthFunc) const;
         status_t setDepthWrite(bool enable);
@@ -173,9 +222,13 @@ namespace ramses
         status_t setCullingMode(ECullMode mode);
         status_t getCullingMode(ECullMode& mode) const;
         status_t setDrawMode(EDrawMode mode);
+        status_t getDrawMode(EDrawMode& mode) const;
         status_t setColorWriteMask(bool writeRed, bool writeGreen, bool writeBlue, bool writeAlpha);
+        status_t getColorWriteMask(bool& writeRed, bool& writeGreen, bool& writeBlue, bool& writeAlpha) const;
         status_t setStencilFunction(EStencilFunc func, uint32_t ref, uint8_t mask);
+        status_t getStencilFunction(EStencilFunc& func, uint32_t& ref, uint8_t& mask) const;
         status_t setStencilOperation(EStencilOperation sfail, EStencilOperation dpfail, EStencilOperation dppass);
+        status_t getStencilOperation(EStencilOperation& sfail, EStencilOperation& dpfail, EStencilOperation& dppass) const;
 
         const Effect& getEffect() const;
 
@@ -190,6 +243,12 @@ namespace ramses
         status_t setInputValueVector4f(const UniformInput& input, uint32_t elementCount, const float* values);
         status_t setInputValueMatrix44f(const UniformInput& input, const float* matrix44fValue);
         status_t setInputValueMatrix44f(const UniformInput& input, uint32_t elementCount, const float* values);
+        status_t setInputValueInt32(const UniformInput& input, uint32_t elementCount, const int32_t* values);
+        status_t setInputValueVector2i(const UniformInput& input, uint32_t elementCount, const int32_t* values);
+        status_t setInputValueVector3i(const UniformInput& input, uint32_t elementCount, const int32_t* values);
+        status_t setInputValueVector4i(const UniformInput& input, uint32_t elementCount, const int32_t* values);
+        status_t setInputValueMatrix22f(const UniformInput& input, uint32_t elementCount, const float* values);
+        status_t setInputValueMatrix33f(const UniformInput& input, uint32_t elementCount, const float* values);
         status_t getInputValueFloat(const UniformInput& input, float& value) const;
         status_t getInputValueVector4f(const UniformInput& input, float& x, float& y, float& z, float& w) const;
         status_t setInputTexture(const UniformInput& input, const TextureSampler& textureSampler);
@@ -199,9 +258,26 @@ namespace ramses
         RAMSES19_LIBRARY_OWNED(Appearance);
     };
 
+    // Mutable geometry a scene keeps: setData writes numberOfBytes at
+    // offsetInBytes, within the size made.
+    class VertexDataBuffer : public SceneObject
+    {
+    public:
+        status_t setData(const char* data, uint32_t numberOfBytes, uint32_t offsetInBytes = 0u);
+        RAMSES19_LIBRARY_OWNED(VertexDataBuffer);
+    };
+    class IndexDataBuffer : public SceneObject
+    {
+    public:
+        status_t setData(const char* data, uint32_t numberOfBytes, uint32_t offsetInBytes = 0u);
+        RAMSES19_LIBRARY_OWNED(IndexDataBuffer);
+    };
+
     class GeometryBinding : public SceneObject
     {
     public:
+        status_t setIndices(const IndexDataBuffer& indicesDataBuffer);
+        status_t setInputBuffer(const AttributeInput& attributeInput, const VertexDataBuffer& dataBuffer, uint32_t instancingDivisor = 0);
         status_t setIndices(const UInt16Array& indicesResource);
         status_t setIndices(const UInt32Array& indicesResource);
         status_t setInputBuffer(const AttributeInput& attributeInput, const FloatArray& resource, uint32_t instancingDivisor = 0);
@@ -242,6 +318,8 @@ namespace ramses
         status_t setRenderOnce(bool enable);
         bool isRenderOnce() const;
         status_t retriggerRenderOnce();
+        status_t setRenderTarget(RenderTarget* renderTarget);
+        const RenderTarget* getRenderTarget() const;
         RAMSES19_LIBRARY_OWNED(RenderPass);
     };
 
@@ -256,6 +334,8 @@ namespace ramses
         RenderGroup* createRenderGroup(const char* name = nullptr);
         Appearance* createAppearance(const Effect& effect, const char* name = nullptr);
         GeometryBinding* createGeometryBinding(const Effect& effect, const char* name = nullptr);
+        VertexDataBuffer* createVertexDataBuffer(uint32_t maximumSizeInBytes, EDataType dataType, const char* name = nullptr);
+        IndexDataBuffer* createIndexDataBuffer(uint32_t maximumSizeInBytes, EDataType dataType, const char* name = nullptr);
 
         TextureSampler* createTextureSampler(ETextureAddressMode wrapUMode, ETextureAddressMode wrapVMode,
                                              ETextureSamplingMethod samplingMethod, const Texture2D& texture,
@@ -265,11 +345,25 @@ namespace ramses
                                              uint32_t anisotropyLevel = 1, const char* name = nullptr);
         Texture2DBuffer* createTexture2DBuffer(uint32_t mipLevelCount, uint32_t width, uint32_t height,
                                                ETextureFormat textureFormat, const char* name = nullptr);
+        TextureSampler* createTextureSampler(ETextureAddressMode wrapUMode, ETextureAddressMode wrapVMode,
+                                             ETextureSamplingMethod samplingMethod, const RenderBuffer& renderBuffer,
+                                             uint32_t anisotropyLevel = 1, const char* name = nullptr);
+        TextureSampler* createTextureSampler(ETextureAddressMode wrapUMode, ETextureAddressMode wrapVMode,
+                                             ETextureSamplingMethod samplingMethod, const TextureCube& texture,
+                                             uint32_t anisotropyLevel = 1, const char* name = nullptr);
+        // sampleCount 0: not multisampled.
+        RenderBuffer* createRenderBuffer(uint32_t width, uint32_t height, ERenderBufferType bufferType,
+                                         ERenderBufferFormat bufferFormat, ERenderBufferAccessMode accessMode,
+                                         uint32_t sampleCount = 0u, const char* name = nullptr);
+        RenderTarget* createRenderTarget(const RenderTargetDescription& rtDesc, const char* name = nullptr);
 
         DataFloat* createDataFloat(const char* name = nullptr);
+        DataInt32* createDataInt32(const char* name = nullptr);
         DataVector2f* createDataVector2f(const char* name = nullptr);
+        DataVector3f* createDataVector3f(const char* name = nullptr);
         DataVector4f* createDataVector4f(const char* name = nullptr);
         DataMatrix44f* createDataMatrix44f(const char* name = nullptr);
+        RamsesObject* findObjectByName(const char* name);
 
         AnimationSystem* createAnimationSystem(uint32_t flags = EAnimationSystemFlags_Default, const char* name = nullptr);
         AnimationSystemRealTime* createRealTimeAnimationSystem(uint32_t flags = EAnimationSystemFlags_Default, const char* name = nullptr);
@@ -283,6 +377,16 @@ namespace ramses
         sceneId_t getSceneId() const;
         status_t setExpirationTimestamp(uint64_t ptpExpirationTimestampInMilliseconds);
         RAMSES19_LIBRARY_OWNED(Scene);
+    };
+
+    // The scene's objects of a type (or of a type derived from it).
+    class SceneObjectIterator
+    {
+    public:
+        SceneObjectIterator(const Scene& scene, ERamsesObjectType objectType);
+        ~SceneObjectIterator();
+        RamsesObject* getNext();
+        RAMSES19_VALUE_STORAGE(SceneObjectIterator);
     };
 }
 

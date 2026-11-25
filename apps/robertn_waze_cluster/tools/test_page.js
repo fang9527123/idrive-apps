@@ -24,12 +24,20 @@
  * the Cluster map row in General; Hide BMW's turn box ticked as the render
  * reports, each press one guide command to the render, greyed and unticked,
  * its label kept, while the cluster renderer holds the box shown; Show on,
- * a drop-down of Cluster, HUD and both in General, Cluster by default, each
- * pick through the render and patchd, the display turned on first, — for a
- * render on neither; the HUD off by default, its size slider and position
+ * a drop-down of Cluster, HUD, both and Off in General, Cluster by default,
+ * each pick through the render and patchd, the display turned on first;
+ * Off from the cluster and from both, Cluster map and HUD map Off, the HUD's
+ * rows and the turn box greyed, Off also for a render on neither; the HUD
+ * off by default, its size slider and position
  * buttons greyed (a greyed slider turned goes back), the slider a 5 % step
  * a turn, Disabled after errors with the slider and position buttons
- * greyed; no label greyed (the HMI's labels have no setEnabled, its
+ * greyed; Keep HUD map over BMW's pop-ups, a checkbox under HUD map,
+ * unticked by default, each press one command to the render and one save,
+ * ticked as the render reports, greyed with the size slider and for a render
+ * without the setting; Own settings for this driver, a checkbox under Show on, greyed
+ * while no driver profile is detected, ticked for a profile with its own
+ * map settings, a switch of profile moving the render to that profile's
+ * (or the shared) settings, unticked the shared ones back; no label greyed (the HMI's labels have no setEnabled, its
  * drop-downs and sliders only the property);
  * hiding the page closes both sockets; a page opened again reads the
  * render's current state; a pending patch, from the daemon and, before the
@@ -55,10 +63,8 @@ const { FakeRender, FakePatch, FakeLogs, RENDER_PAGE, RENDER_FPS } = require('./
 const { RENDER_PATH, PATCH_PATH, PENDING_PATH, SIZE, SAFE, HUD_SIZE_STEPS } = require('../src/waze_cluster_control.js');
 const { LOGS_PATH } = require('../src/logs_control.js');
 
-const STAGED = fs.readdirSync(path.join(__dirname, '..'))
-    .find((name) => name.startsWith('robertn_waze_cluster@') && !name.endsWith('.tgz'));
-const PKG = path.join(__dirname, '..', STAGED);
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'mgu-app.json'), 'utf8'));
+const PKG = path.join(__dirname, '..', MANIFEST.tree);
 const UI_DIR = path.join(PKG, 'rhmiData', 'uiDescriptions', 'ID7');
 const UI = JSON.parse(fs.readFileSync(path.join(UI_DIR, 'uiDescription.json'), 'utf8'));
 const XML = fs.readFileSync(path.join(UI_DIR, 'application.xml'), 'utf8');
@@ -192,6 +198,7 @@ rhmi.getResourceBundle = () => ({
 
 const logs = [];
 let inactiveReports = 0;
+const tileCalls = [];                   // the app's calls on its tile
 const logger = {};
 ['error', 'warn', 'info', 'verbose', 'debug'].forEach((level) => {
     logger[level] = (msg) => logs.push(`${level}: ${msg}`);
@@ -208,11 +215,12 @@ class OnlineApp extends EventEmitter {
         this._initialized = false;
         this._appStatusService = null;
         const description = APP_JSON.application.entryPoints[0];
+        const call = (name) => (v) => { tileCalls.push(v === undefined ? name : `${name} ${v}`); return Promise.resolve(); };
         this._entryPoints = [{
-            entryPoint: { setText: () => Promise.resolve(), setIcon: () => Promise.resolve() },
+            entryPoint: { setText: call('text'), setIcon: call('icon') },
             getDescription: () => description,
-            init: () => Promise.resolve(),
-            setAvailability: () => Promise.resolve()
+            init: call('init'),
+            setAvailability: call('availability')
         }];
     }
     start() { setImmediate(() => this.emit('initialized')); return Promise.resolve(); }
@@ -227,11 +235,17 @@ class OnlineApp extends EventEmitter {
     destroyBundles() { return Promise.resolve(); }
 }
 
-/* HMIContext: its display language, English at first; displayLanguage(v) is a change. */
+/* HMIContext: its display language, English at first; displayLanguage(v) is a change.
+ * SessionManager: the driver profile in effect, sessionUser ('' while none). */
 const hmiContexts = [];
 let displayLanguage = null;
+let sessionUser = '';
 const someipBuilders = {
-    buildTypedProxy: (iface, instance) => Promise.resolve({
+    buildTypedProxy: (iface, instance) => Promise.resolve(iface === 'de.bmw.infotainment.personalization.SessionManager' ? {
+        init: () => Promise.resolve(),
+        waitUntilAvailable: () => Promise.resolve(),
+        currentUserAccountReference: { getValue: () => Promise.resolve(sessionUser) }
+    } : {
         init: () => Promise.resolve(),
         waitUntilAvailable: () => Promise.resolve(),
         currentDisplayLanguage: {
@@ -270,8 +284,8 @@ async function main() {
     const main = xmlIds('1').map(([id]) => [id, components[id].type, components[id].name, shipped(components[id])]);
     assert.deepStrictEqual(main.map(([id, type, name, text]) => (type === 'title' ? name : `${name} ${text}`)), [
         'wocTitle',
-        'wocHeadGeneral General', 'wocShowOn Show on: Cluster', 'wocMap Cluster map: Off', "wocGuide Hide BMW's turn box", 'wocLogs Logs',
-        'wocHeadHud HUD', 'wocHud HUD map: \u2014', 'wocHudSize Size: \u2014', 'wocHudPos Position: \u2014', 'wocHudLeft Move left',
+        'wocHeadGeneral General', 'wocShowOn Show on: Cluster', 'wocProfile Own settings for this driver', 'wocMap Cluster map: Off', "wocGuide Hide BMW's turn box", 'wocLogs Logs',
+        'wocHeadHud HUD', 'wocHud HUD map: \u2014', "wocHudKeep Keep HUD map over BMW's pop-ups", 'wocHudSize Size: \u2014', 'wocHudPos Position: \u2014', 'wocHudLeft Move left',
         'wocHudRight Move right', 'wocHudUp Move up', 'wocHudDown Move down', 'wocHudCentre Centre',
         'wocHeadCarPlay CarPlay', 'wocStatus Status: Connecting…', 'wocEnable Patch', 'wocDisable Remove patch', 'wocWifi ', 'wocWifiHint ',
         'wocHeadAa Android Auto', 'wocAaStatus Status: Connecting…', 'wocAaEnable Patch', 'wocAaDisable Remove patch',
@@ -292,11 +306,11 @@ async function main() {
         .find((id) => components[id].name === n)].properties.Focusable.value]), Array(4).fill(['0', 0]), 'the section headers take no focus');
     assert.strictEqual(main.find(([, , name]) => focus[name] === '3')[2], 'wocShowOn', 'the first row the controller stops on: Show on');
     assert(!main.some(([, , name]) => /^wocRow|^wocSetup|^wocCapture/.test(name)), 'no log rows, setup line or capture on the main page');
-    assert.deepStrictEqual(['wocAaCard', 'wocGuide'].map((n) => widgets[n]), Array(2).fill('LT_CheckBox_1Row'),
+    assert.deepStrictEqual(['wocAaCard', 'wocGuide', 'wocProfile', 'wocHudKeep'].map((n) => widgets[n]), Array(4).fill('LT_CheckBox_1Row'),
         'the on/off settings are checkboxes');
     assert.deepStrictEqual([widgets.wocShowOn, widgets.wocHudSize], ['LT_DropDownMenu_1Row_2Col3070', 'LT_Slider_LeftJustified_Fill_Steps'],
-        'where the map shows: a drop-down of three; the HUD\'s size: a slider');
-    assert.deepStrictEqual(components['62'].rows.map((r) => r.ItemText.value), ['Cluster', 'HUD (experimental)', 'Cluster and HUD (experimental)']);
+        'where the map shows: a drop-down of four; the HUD\'s size: a slider');
+    assert.deepStrictEqual(components['62'].rows.map((r) => r.ItemText.value), ['Cluster', 'HUD (experimental)', 'Cluster and HUD (experimental)', 'Off']);
     assert.deepStrictEqual(['MinValue', 'MaxValue', 'NumberOfSteps'].map((k) => components['52'].rows[0][k].value), [0, HUD_SIZE_STEPS, HUD_SIZE_STEPS],
         'the slider: one step for each 5 %');
     /* every info row reads "Name: Value" */
@@ -337,15 +351,20 @@ async function main() {
     try {
         process.exit = (code) => { throw new Error(`process.exit(${code})`); };
         runSource();
+        OnlineApp.instance._profiles._pollMs = 20;
         const status = byName.wocStatus;
         await until('page shows the map', () => byName.wocMap.text === `Cluster map: Showing ${RENDER_PAGE} — ${RENDER_FPS}` && status.text === 'Status: Patched');
         assert(!logs.some((l) => /^error/.test(l)), logs.filter((l) => /^error/.test(l)).join('\n'));
         const bound = logs.filter((l) => l.startsWith('info: BIND OK: ')).map((l) => l.split(' ')[3]).sort();
         assert.deepStrictEqual(bound, ['wocAaCard', 'wocAaDisable', 'wocAaEnable', 'wocAaZoomIn', 'wocAaZoomOut', 'wocCapture', 'wocDisable', 'wocEnable',
-            'wocGuide', 'wocHudCentre', 'wocHudDown', 'wocHudLeft', 'wocHudRight', 'wocHudUp', 'wocLogs', 'wocLogsSave', 'wocRestart'],
+            'wocGuide', 'wocHudCentre', 'wocHudDown', 'wocHudKeep', 'wocHudLeft', 'wocHudRight', 'wocHudUp', 'wocLogs', 'wocLogsSave', 'wocProfile',
+            'wocRestart'],
             'bound buttons and checkbox');
         assert.strictEqual(byName.wocRestart.visible, false, 'restart button hidden while the map shows');
         console.log('ok   a page opened while the map is up shows it');
+        assert.deepStrictEqual(tileCalls, ['init', 'availability ENABLED'],
+            'the tile: enabled, its name and icon left to the app manager');
+        console.log('ok   the tile keeps the name and icon the app manager gave it');
 
         await until('patched: CarPlay\'s Remove patch button enabled, CarPlay\'s Patch button greyed', () => byName.wocDisable.enabled === true &&
             byName.wocEnable.enabled === false);
@@ -364,22 +383,26 @@ async function main() {
             JSON.stringify(aaRow()) === JSON.stringify([true, false, false, false, false]) && byName.wocAaZoom.text === 'Zoom: —' &&
             byName.wocAaCard.text === "Hide phone's turn card" && byName.wocAaCard.selected === false);
         byName.wocAaEnable.emit('action');
+        await until('Android Auto armed, waiting for the restart; Zoom and the card offered meanwhile', () =>
+            byName.wocAaStatus.text === 'Status: Patched after restart' && JSON.stringify(aaRow()) === JSON.stringify([false, true, true, true, true]) &&
+            byName.wocRestart.visible === true);
+        patch.aaStart();
         await until('Android Auto on', () => byName.wocAaStatus.text === 'Status: Patched' &&
             JSON.stringify(aaRow()) === JSON.stringify([false, true, true, true, true]));
         byName.wocAaZoomOut.emit('action');
-        await until('zoomed out', () => patch.received.some((m) => m.cmd === 'aa-density' && m.value === 170) &&
-            byName.wocAaZoom.text === 'Zoom: 170 dpi');
+        await until('zoomed out, waiting for the restart', () => patch.received.some((m) => m.cmd === 'aa-density' && m.value === 170) &&
+            byName.wocAaZoom.text === 'Zoom: 170 dpi (after restart)' && byName.wocAaStatus.text === 'Status: Patched after restart');
         assert(status.text !== '' && !/Android Auto/.test(status.text), 'CarPlay\'s line is its own');
-        await until('the card shown', () => byName.wocAaCard.enabled === true && byName.wocAaCard.selected === false);
+        await until('the card shown, offered while the Zoom waits', () => byName.wocAaCard.enabled === true && byName.wocAaCard.selected === false);
         const card = byName.wocAaCard;
         card.ticks.length = 0;
         card.press();
-        await until('card hidden', () => patch.received.some((m) => m.cmd === 'aa-card' && m.value === 'hidden') &&
-            patch.aa.state === 'patched' && patch.aa.diskCard === 'hidden' && card.selected === true &&
-            card.text === "Hide phone's turn card");
+        await until('card hidden, waiting for the restart', () => patch.received.some((m) => m.cmd === 'aa-card' && m.value === 'hidden') &&
+            patch.aa.pending === 'apply' && patch.aa.diskCard === 'hidden' && patch.aa.runCard === 'shown' && card.selected === true &&
+            card.text === "Hide phone's turn card (after restart)");
         await sleep(100);
         assert(card.ticks.every((t) => t === true), `ticked from the press on, never unticked meanwhile: ${JSON.stringify(card.ticks)}`);
-        patch.aa = Object.assign({}, patch.aa, { state: 'unknown', pending: 'apply', aapd: 'deferred', dpi: 160, density: 160, runDpi: 170, runCard: 'shown' });
+        patch.aa = Object.assign({}, patch.aa, { state: 'unknown', pending: 'apply', aapd: 'deferred', dpi: 160, density: 160, runDpi: 180, runCard: 'shown' });
         patch.announce('patched', 'high', null);
         await until('waiting for a restart', () => byName.wocAaZoom.text === 'Zoom: 160 dpi (after restart)' &&
             byName.wocAaCard.text === "Hide phone's turn card (after restart)" && byName.wocAaCard.selected === true &&
@@ -422,7 +445,7 @@ async function main() {
         /* ---- where the map shows, and the HUD ---- */
         const showOn = byName.wocShowOn;
         const size = byName.wocHudSize;
-        const hudRows = () => ['wocHudSize', 'wocHudLeft', 'wocHudRight', 'wocHudUp', 'wocHudDown'].map((n) => byName[n].enabled);
+        const hudRows = () => ['wocHudKeep', 'wocHudSize', 'wocHudLeft', 'wocHudRight', 'wocHudUp', 'wocHudDown'].map((n) => byName[n].enabled);
         await until('the cluster, the HUD off', () => showOn.shown() === 'Show on: Cluster' && showOn.enabled === true &&
             byName.wocHud.text === 'HUD map: Off' && size.text === 'Size: Standard' && size.cells['0:Value'] === 5 &&
             byName.wocHudPos.text === 'Position: Centre');
@@ -445,6 +468,30 @@ async function main() {
         await until('smaller', () => size.text === 'Size: 50 %' && render.hudWidth === 50);
         byName.wocHudLeft.emit('action');
         await until('moved', () => byName.wocHudPos.text === 'Position: 10 px left' && byName.wocHudCentre.enabled === true);
+        /* the HUD map over BMW's pop-ups: gives way by default; a press keeps it shown, the render's answer ticks it, patchd saves it */
+        const keep = byName.wocHudKeep;
+        await until('the move at the render', () => render.hudX === -10);
+        assert(keep.enabled === true && keep.selected === false && keep.text === "Keep HUD map over BMW's pop-ups", 'gives way by default');
+        render.received.length = 0;
+        keep.press();
+        await until('kept shown', () => render.hudKeep === 1 && keep.selected === true);
+        assert.deepStrictEqual(render.received, [{ cmd: 'hud', hud_keep_shown: '1' }], 'one command to the render');
+        await until('saved', () => patch.received.some((m) => m.cmd === 'hud-keep-shown' && m.on === 1) && patch.map.hud_keep_shown === 1);
+        await sleep(450);
+        keep.press();
+        await until('gives way again', () => render.hudKeep === 0 && keep.selected === false && patch.map.hud_keep_shown === 0);
+        render.hudKeep = null;   /* a render without the setting */
+        render.announce(render.state, render.reason);
+        await until('a render without it: greyed, unticked', () => keep.enabled === false && keep.selected === false);
+        render.received.length = 0;
+        await sleep(450);
+        keep.press();
+        await until('a greyed checkbox pressed: unticked again', () => keep.selected === false);
+        await sleep(100);
+        assert.deepStrictEqual(render.received, [], 'nothing sent');
+        render.hudKeep = 0;
+        render.announce(render.state, render.reason);
+        await until('enabled again', () => keep.enabled === true);
         await sleep(450);
         showOn.pick(2);
         await until('both', () => render.cluster === 1 && showOn.shown() === 'Show on: Cluster and HUD (experimental)' &&
@@ -463,18 +510,95 @@ async function main() {
         showOn.pick(0);
         await until('the cluster again', () => render.hud === 0 && showOn.shown() === 'Show on: Cluster' && byName.wocHud.text === 'HUD map: Off');
         render.received.length = 0;
-        /* the render on neither (its own configuration): no choice shown, one to make */
+        /* Off: the map on neither, both rows Off, the HUD's rows and the turn box greyed, saved; both again, Off from
+         * both, Cluster again */
+        const offShown = () => showOn.shown() === 'Show on: Off' && byName.wocMap.text === 'Cluster map: Off' &&
+            byName.wocHud.text === 'HUD map: Off' && byName.wocGuide.enabled === false && hudRows().every((e) => e === false) &&
+            byName.wocHudCentre.enabled === false && showOn.enabled === true;
+        const saves = () => patch.received.filter((m) => /^(cluster|hud)$/.test(m.cmd)).length;
+        let saved = saves();
+        await sleep(450);
+        showOn.pick(3);
+        await until('off from the cluster', () => render.cluster === 0 && render.hud === 0 && offShown());
+        assert.deepStrictEqual(render.received, [{ cmd: 'cluster', on: '0' }], 'only the cluster off');
+        await until('off saved', () => saves() === saved + 1);
+        assert.deepStrictEqual(patch.received.slice(-1), [{ cmd: 'cluster', on: 0 }]);
+        render.received.length = 0;
+        size.turn(1);
+        byName.wocHudLeft.emit('action');
+        await sleep(100);
+        assert.deepStrictEqual(render.received, [], 'greyed while off: nothing sent');
+        await sleep(450);
+        showOn.pick(2);
+        await until('both from off', () => render.cluster === 1 && render.hud === 1 &&
+            showOn.shown() === 'Show on: Cluster and HUD (experimental)' && hudRows().every((e) => e === true) && byName.wocGuide.enabled === true);
+        render.received.length = 0;
+        saved = saves();
+        await sleep(450);
+        showOn.pick(3);
+        await until('off from both', () => render.cluster === 0 && render.hud === 0 && offShown());
+        assert.deepStrictEqual(render.received, [{ cmd: 'cluster', on: '0' }, { cmd: 'hud', on: '0' }], 'both off');
+        await until('off from both saved', () => saves() === saved + 2);
+        await sleep(450);
+        showOn.pick(0);
+        await until('the cluster from off', () => render.cluster === 1 && render.hud === 0 && showOn.shown() === 'Show on: Cluster' &&
+            byName.wocGuide.enabled === true && /^Cluster map: Showing/.test(byName.wocMap.text));
+        render.received.length = 0;
+        /* the render on neither (its own configuration): Off shown, a choice to make */
         render.cluster = 0;
         render.announce(render.state, render.reason);
-        await until('neither', () => showOn.shown() === 'Show on: —' && showOn.enabled === true &&
+        await until('neither', () => showOn.shown() === 'Show on: Off' && showOn.enabled === true &&
             showOn.cells['1:ItemText'] === 'HUD (experimental)');
         await sleep(450);
         showOn.pick(0);
         await until('the cluster', () => render.cluster === 1 && showOn.shown() === 'Show on: Cluster');
         render.received.length = 0;
         console.log('ok   where the map shows: a drop-down, Cluster by default, each choice through the render and patchd, the HUD on first, ' +
-            '— for neither; the HUD: off by default with its size and position greyed; the size slider and Position change it; ' +
+            'Off for neither, the HUD\'s rows and the turn box greyed then; the HUD: off by default with its size and position greyed; ' +
+            'the size slider, Position and Keep HUD map over BMW\'s pop-ups change it, the checkbox greyed for a render without it; ' +
             'Disabled after errors greys them');
+
+        /* ---- own settings per driver profile ---- */
+        const own = byName.wocProfile;
+        /* no profile read yet (an empty value): greyed, nothing told, a press asks nothing */
+        await sleep(100);
+        assert(own.enabled === false && own.selected === false && own.text === 'Own settings for this driver', 'greyed, unticked');
+        assert.strictEqual(patch.count('profile'), 0, 'an empty value tells patchd nothing');
+        own.press();
+        await until('a greyed checkbox pressed: unticked again', () => own.selected === false);
+        await sleep(100);
+        assert.strictEqual(patch.count('profile-own'), 0, 'a greyed checkbox pressed asks nothing');
+        sessionUser = 'a1b2c3d4-0000-4000-8000-000000000001';
+        await until('driver A: enabled, unticked', () => own.enabled === true && own.selected === false);
+        await sleep(450);
+        own.ticks.length = 0;
+        own.press();
+        await until('ticked', () => patch.received.some((m) => m.cmd === 'profile-own' && m.id === sessionUser && m.on === 1) &&
+            own.selected === true && own.enabled === true);
+        await sleep(100);
+        assert(own.ticks.every((v) => v === true), `ticked from the press on, never unticked meanwhile: ${JSON.stringify(own.ticks)}`);
+        await sleep(450);
+        showOn.pick(1);
+        await until('A: the HUD alone, saved', () => render.hud === 1 && render.cluster === 0 && showOn.shown() === 'Show on: HUD (experimental)' &&
+            patch.map.hud === 1 && patch.map.cluster === 0);
+        sessionUser = 'a1b2c3d4-0000-4000-8000-000000000002';
+        await until('B, without its own: the shared settings, the cluster', () => render.cluster === 1 && render.hud === 0 &&
+            showOn.shown() === 'Show on: Cluster' && own.selected === false && own.enabled === true);
+        sessionUser = 'a1b2c3d4-0000-4000-8000-000000000001';
+        await until('A again: its HUD, ticked', () => render.hud === 1 && render.cluster === 0 && showOn.shown() === 'Show on: HUD (experimental)' &&
+            own.selected === true);
+        await sleep(450);
+        own.press();
+        await until('unticked: the shared settings back', () => own.selected === false && own.enabled === true && render.cluster === 1 &&
+            render.hud === 0 && showOn.shown() === 'Show on: Cluster');
+        const told = patch.count('profile');
+        sessionUser = '';
+        await sleep(150);
+        assert(own.enabled === true && patch.count('profile') === told && showOn.shown() === 'Show on: Cluster', 'an empty read changes nothing');
+        sessionUser = 'a1b2c3d4-0000-4000-8000-000000000001';
+        render.received.length = 0;
+        console.log('ok   Own settings for this driver: greyed until a profile is read; ticked, the profile keeps its own map settings; ' +
+            'a switch moves the render to the other profile\'s or the shared settings; unticked, the shared ones back; an empty read changes nothing');
 
         byName.ST_OnlineApps_WazeCluster.emit('visible', { visible: false });
         await until('sockets closed', () => render._clients.size === 0 && patch._clients.size === 0);
@@ -486,14 +610,14 @@ async function main() {
         await until('page reads the current state', () => status.text === 'Status: Patched' && byName.wocMap.text === 'Cluster map: Waiting for the phone');
         console.log('ok   a page opened again reads the render\'s current state');
 
-        /* The patch the install wrote, from the daemon: its line, Patch and
-         * Remove patch greyed, the restart offered. */
+        /* The patch the install wrote, from the daemon: its line, Patch
+         * greyed, Remove patch and the restart offered. */
         patch.pending = 'apply';
         patch.announce('unknown', 'high', 'patch written; takes effect at the next head-unit start', 'deferred');
         await until('pending on screen', () => status.text === 'Status: Patched after restart' && byName.wocMap.text === 'Cluster map: Waiting for the phone' &&
-            byName.wocEnable.enabled === false && byName.wocDisable.enabled === false &&
+            byName.wocEnable.enabled === false && byName.wocDisable.enabled === true &&
             byName.wocRestart.visible === true && byName.wocRestart.enabled === true);
-        console.log('ok   a pending patch from the daemon: its line, Patch and Remove patch greyed, the restart offered');
+        console.log('ok   a pending patch from the daemon: its line, Patch greyed, Remove patch and the restart offered');
 
         /* Before the head-unit start that starts the daemon: from the marker. */
         byName.ST_OnlineApps_WazeCluster.emit('visible', { visible: false });
@@ -556,8 +680,8 @@ async function main() {
             'only CarPlay Wi-Fi, its line and the restart\'s rows are shown and hidden');
         Object.values(components).filter((d) => !/^(wocRestart|wocWifi)/.test(d.name) && d.type !== 'title')
             .forEach((d) => assert.strictEqual(byName[d.name].visible, true, `${d.name} stays on the page`));
-        ['wocEnable', 'wocDisable', 'wocAaEnable', 'wocAaDisable', 'wocAaZoomOut', 'wocAaZoomIn', 'wocAaCard', 'wocGuide', 'wocShowOn', 'wocHudSize',
-            'wocHudLeft', 'wocHudCentre']
+        ['wocEnable', 'wocDisable', 'wocAaEnable', 'wocAaDisable', 'wocAaZoomOut', 'wocAaZoomIn', 'wocAaCard', 'wocGuide', 'wocShowOn', 'wocProfile', 'wocHudSize',
+            'wocHudLeft', 'wocHudCentre', 'wocHudKeep']
             .forEach((n) => assert.deepStrictEqual([...byName[n].enabledSeen].sort(), [false, true], `${n} greyed and enabled in place`));
         const valueRow = /^[A-Z][A-Za-z ]+: [A-Z0-9\u2014]/;
         ['wocStatus', 'wocAaStatus', 'wocAaZoom', 'wocMap', 'wocHud', 'wocHudSize', 'wocHudPos', 'wocRestartStatus']

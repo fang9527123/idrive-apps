@@ -17,13 +17,13 @@
     "Save logs": "Lưu nhật ký",
     "Not supported on this car": "Không hỗ trợ trên xe này",
     "Unavailable": "Không khả dụng",
-    "Untested version": "Phiên bản chưa thử nghiệm",
     "Changed by another tool": "Đã bị công cụ khác thay đổi",
     "(after restart)": "(sau khi khởi động lại)",
     "Status: {0}": "Trạng thái: {0}",
     "Connecting…": "Đang kết nối…",
     "Removed after restart": "Gỡ sau khi khởi động lại",
     "Removed — head unit kept restarting": "Đã gỡ — hệ thống liên tục khởi động lại",
+    "Removed — Android Auto crashed": "Đã gỡ — Android Auto bị lỗi",
     "Patched after restart": "Vá sau khi khởi động lại",
     "Removing patch…": "Đang gỡ bản vá…",
     "Patching…": "Đang vá…",
@@ -36,7 +36,7 @@
     "Off": "Tắt",
     "Starting…": "Đang khởi động…",
     "Showing {0}": "Đang hiển thị {0}",
-    "Waze map": "bản đồ Waze",
+    "map": "bản đồ",
     "Error": "Lỗi",
     "Frozen": "Bị treo",
     "Waiting for the phone": "Đang chờ điện thoại",
@@ -66,7 +66,7 @@
     "Not enough space": "Không đủ dung lượng",
     "Too large to save": "Quá lớn để lưu",
     "Save failed": "Lưu thất bại",
-    "Waze on cluster": "Waze trên bảng đồng hồ",
+    "Maps on cluster": "Bản đồ trên bảng đồng hồ",
     "Show on": "Hiển thị trên",
     "Cluster": "Bảng đồng hồ",
     "HUD (experimental)": "HUD (thử nghiệm)",
@@ -92,6 +92,8 @@
     "CarPlay Wi-Fi: {0}": "Wi-Fi CarPlay: {0}",
     "5 GHz": "5 GHz",
     "2.4 GHz": "2,4 GHz",
-    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "Âm thanh có thể bị ngắt. Trên iPhone, hãy tắt rồi bật lại Wi-Fi."
+    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "Âm thanh có thể bị ngắt. Trên iPhone, hãy tắt rồi bật lại Wi-Fi.",
+    "Own settings for this driver": "Cài đặt riêng cho người lái này",
+    "Keep HUD map over BMW's pop-ups": "Giữ bản đồ trên HUD phía trên cửa sổ bật lên của BMW"
   }
 }

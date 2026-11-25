@@ -12,13 +12,15 @@
  * the scene once if any did, and tells each layer whether that flush went
  * (committed). A layer that staged nothing is not asked. A layer whose
  * failed write left its buffer half written either holds the target until
- * its whole rewrite goes (holds_flush) or is hidden until then. No
- * layer makes a texture, sampler or effect per update. */
+ * its whole rewrite goes (holds_flush) or is hidden until then. An image
+ * is hidden in each scene until its first whole write goes. No layer makes
+ * a texture, sampler or effect per update. */
 #ifndef CRS_LAYER_H
 #define CRS_LAYER_H
 
 #include <stdint.h>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -30,12 +32,39 @@
 
 namespace crs {
 
+class Coverage;
+
+/* How a layer is drawn in the next flush, for what it covers (occlusion.h):
+ * drawn or not, its rect, turned or scaled by its turn, its opacity and its
+ * target's fade, and whether an animation of it plays. */
+struct Shown {
+    bool drawn = false;
+    Rect rect;
+    bool turned = false;
+    float opacity = 1, fade = 1;
+    bool animating = false;
+    /* The budget allows a write this tick: an image's pixels waiting to be
+     * written may reach the scene in it. */
+    bool budget_ready = true;
+};
+
 /* What a client sets on a layer, at any time. */
 struct LayerParams {
     Klass klass = Klass::Content;
     int z = 0;
     bool visible = true, exclusive = false, prewarm = false, contend = false;
+    bool preload = false;     /* its target's scene kept fetched, not mapped, while nothing shows it (slots.h) */
     bool guide_hold = true;   /* false: no guide hold for its target while it wants it (slots.h) */
+    bool yield = true;        /* false: its target gives way to no stock pop-up while it wants it (slots.h) */
+    /* While it is shown, every other client's video at most this many
+     * updates a second (Compositor::fps_cap); 0: no request. */
+    uint32_t others_fps = 0;
+    /* The target whose host placed this layer here (its producer's mark,
+     * PROTOCOL.md "Hosting from layers"); empty: none. */
+    std::string hosted;
+    /* The canvas it draws in (canvas.h), set when it is made; 0: the
+     * target's layer stack. */
+    uint32_t canvas = 0;
     Rect rect;
     float opacity = 1.0f;
     /* A quad turned (degrees clockwise) and scaled about its pivot: px, py
@@ -70,6 +99,9 @@ public:
     bool set(const std::string &name, UniformType t, const float *v, uint32_t elements);
     void dirty_all();
     void dirty(const std::string &name);
+    /* name follows a shared value (on) and is not staged, or does not any
+     * more and goes again with its own value, if it has one. */
+    void link(const std::string &name, bool on);
     /* Sends the changed ones to drawable; whether any went. One the shader
      * does not have is the client's mistake: dropped, not retried every
      * tick. */
@@ -86,6 +118,7 @@ private:
         bool dirty = true;
     };
     std::map<std::string, Value> values_;
+    std::set<std::string> linked_;
     size_t floats_ = 0;
 };
 
@@ -105,6 +138,17 @@ public:
     virtual const char *kind() const = 0;
 
     LayerParams params;
+    /* What the scene shows of the layer: params, or while a change of them
+     * waits (the compositor's defer_uncover) what its last flush showed. */
+    const LayerParams &drawn_params() const { return scene_held_ ? scene_params_ : params; }
+    /* p: the scene keeps showing p (null: params again); the caller places
+     * and arranges the layer then. */
+    void hold_scene(const LayerParams *p)
+    {
+        scene_held_ = p != nullptr;
+        if (p)
+            scene_params_ = *p;
+    }
 
     /* Plays a on part (0: the layer's quad, or a mesh layer's camera) by
      * the renderer, replacing anim of the same number; kept and started
@@ -115,6 +159,14 @@ public:
     bool stop(uint32_t anim);
     /* The quad or part a sampler of part is bound on; 0: none. */
     virtual int drawable(uint32_t) const { return 0; }
+    /* The uniforms of the quad (part 0) or of a mesh layer's part; null
+     * when it has none. */
+    virtual Uniforms *uniforms_of(uint32_t) { return nullptr; }
+    /* An animation of the part's uniform name plays (or waits). */
+    bool animating(uint32_t part, const std::string &name) const;
+    /* The largest x or y scale an animation of the part's scale reaches
+     * (absolute); 1 with none. */
+    float animated_scale(uint32_t part) const;
     /* What the renderer refused of the layer's content after it was
      * attached; empty: nothing. */
     virtual std::string refusal() const { return std::string(); }
@@ -166,6 +218,27 @@ public:
     /* Pixel bytes its buffers hold in the scene; 0 when not attached. */
     virtual size_t buffer_bytes() const { return 0; }
 
+    /* Occlusion (occlusion.h), each tick of a requested target before
+     * stage(), its layers top first, each drawn as s: occluded() gets what
+     * the layers drawn above this one cover opaquely (a video hides its
+     * tiles under it), and occlude() adds what this one covers. */
+    virtual void occluded(const Coverage &, const Shown &) {}
+    virtual void occlude(Coverage *, const Shown &) {}
+    /* Tiles it left unwritten while hidden are no longer hidden: the target
+     * flushes only with its write (video_layer.h). */
+    virtual bool uncovering() const { return false; }
+    /* Its pixels have reached the display in this scene: a write of them
+     * went (layers with nothing to write: always). */
+    virtual bool on_display() const { return true; }
+
+    /* Animations the client plays, started or not; started ones. */
+    bool animating() const { return !played_.empty(); }
+    bool animations_started() const;
+    /* Starts the animations play() kept waiting (it does while the layer
+     * covers a video's tiles: the compositor starts them in the flush that
+     * writes what they uncover); whether any. */
+    bool start_pending();
+
 protected:
     /* After set_fade() changed the fade. */
     virtual void faded() {}
@@ -180,9 +253,9 @@ protected:
     virtual void restore(uint32_t, const Animation &) {}
     /* Starts every animation in the scene just attached. */
     void start_animations();
-    /* The scene goes, or the layer: the animations' handles are forgotten,
-     * stopped first when drop. */
-    void forget_animations(bool drop);
+    /* The scene goes, or the layer: the animations' handles are forgotten
+     * (dropping a node stops its animations). */
+    void forget_animations();
 
     uint32_t id_;
     int target_;
@@ -192,6 +265,10 @@ protected:
     bool drawn_ = false;
     int32_t order_ = 0;
     float fade_ = 1.0f;
+    /* New animations wait for start_pending(). */
+    bool defer_starts_ = false;
+    bool scene_held_ = false;
+    LayerParams scene_params_;
 
     /* Keeps a and starts it when attached; no limit (the service's own). */
     bool play(uint32_t anim, uint32_t part, const Animation &a, std::string *err);
@@ -201,6 +278,7 @@ private:
         uint32_t part = 0;
         Animation a;
         int handle = 0;   /* in the current scene */
+        bool pending = false;   /* waits for start_pending() */
     };
     std::map<uint32_t, Played> played_;
 };
@@ -227,6 +305,7 @@ public:
     bool update(const std::vector<crk::PixelRect> &rects, const uint8_t *data, size_t n, std::string *err);
 
     bool ready(int64_t) const override { return have_; }
+    bool on_display() const override { return written_; }
     bool attach(Graph *g, int64_t now_ms, std::string *err) override;
     void detach(bool drop) override;
     void arrange(bool drawn, int32_t order) override;
@@ -240,6 +319,11 @@ public:
     WriteStats write_stats() const override;
     size_t buffer_bytes() const override { return g_ ? (size_t)w_ * h_ * 4 : 0; }
     bool fades() const override { return true; }
+    void occlude(Coverage *cov, const Shown &s) override;
+
+    /* Opaque blocks: kOpaqueBlock x kOpaqueBlock pixels each, tracked once
+     * the image is asked what it covers. */
+    static const uint32_t kOpaqueBlock = 8;
 
 protected:
     void faded() override;
@@ -262,9 +346,24 @@ private:
      * image is exclusive or was when the write failed (hold_). */
     bool holding() const { return parked_ && (hold_ || params.exclusive); }
     bool whole_ = true, have_ = false, parked_ = false, hold_ = false;
+    bool written_ = false;   /* a write went since attach() */
     int buf_ = 0, quad_ = 0;
     std::vector<uint8_t> scratch_;
     size_t staged_ = 0;   /* bytes setData took this tick */
+    /* Per opaque block, once tracked (opq_on_): whether every pixel of px_
+     * has alpha 255 (opq_px_; 2: not looked at since it changed), and
+     * whether every pixel the buffer holds there has, as of the last write
+     * that went (opq_buf_; known only while opq_buf_known_). */
+    bool opq_on_ = false, opq_buf_known_ = false;
+    std::vector<uint8_t> opq_px_, opq_buf_;
+    uint32_t opq_cols_ = 0, opq_rows_ = 0;
+    /* Whether every block, or none, is opaque in the buffer, and in the
+     * buffer and the pixels waiting: kept until either changes (opq_ver_). */
+    uint64_t opq_ver_ = 1, opq_sum_ver_ = 0;
+    bool opq_all_buf_ = false, opq_none_buf_ = true, opq_all_both_ = false, opq_none_both_ = true;
+    void opq_changed(const crk::PixelRect &r);
+    void opq_resolve();
+    void opq_summary();
     uint64_t writes_ = 0, bytes_ = 0, failed_ = 0, held_budget_ = 0;
 };
 
@@ -287,6 +386,10 @@ public:
     bool set_uniform(const std::string &name, UniformType t, const float *v, uint32_t elements);
     /* u_time from the renderer's clock. */
     void cluster_time();
+    /* How its quad blends and which channels it writes (PROTOCOL.md
+     * "Render state"); applied with the next flush. */
+    const PartLook &look() const { return look_; }
+    void set_look(const PartLook &look);
 
     bool ready(int64_t) const override { return true; }
     bool attach(Graph *g, int64_t now_ms, std::string *err) override;
@@ -297,6 +400,7 @@ public:
     void committed(bool ok, int64_t now_ms) override;
     int64_t wake_in_ms(int64_t now_ms) const override;
     int drawable(uint32_t part) const override { return part ? 0 : quad_; }
+    Uniforms *uniforms_of(uint32_t part) override { return part ? nullptr : &uniforms_; }
 
 protected:
     int animated(uint32_t part) const override { return part ? 0 : quad_; }
@@ -305,6 +409,8 @@ protected:
         return quad_animation_error(part, a);
     }
     void restore(uint32_t part, const Animation &a) override;
+    /* Its quad in the attached scene; 0: none. */
+    int quad_handle() const { return quad_; }
 
 private:
     int effect_;
@@ -314,6 +420,8 @@ private:
     int64_t born_ms_;
     Uniforms uniforms_;
     bool staged_ = false;
+    PartLook look_ = quad_look();
+    bool look_dirty_ = false;   /* the quad does not have look_ yet */
 };
 
 }  // namespace crs

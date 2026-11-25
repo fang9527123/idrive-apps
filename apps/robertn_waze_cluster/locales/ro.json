@@ -17,13 +17,13 @@
     "Save logs": "Salvare jurnale",
     "Not supported on this car": "Neacceptat pe această mașină",
     "Unavailable": "Indisponibil",
-    "Untested version": "Versiune netestată",
     "Changed by another tool": "Modificat de alt instrument",
     "(after restart)": "(după repornire)",
     "Status: {0}": "Stare: {0}",
     "Connecting…": "Se conectează…",
     "Removed after restart": "Eliminat după repornire",
     "Removed — head unit kept restarting": "Eliminat — unitatea repornea continuu",
+    "Removed — Android Auto crashed": "Eliminat — Android Auto s-a blocat",
     "Patched after restart": "Aplicat după repornire",
     "Removing patch…": "Se elimină patch-ul…",
     "Patching…": "Se aplică patch-ul…",
@@ -36,7 +36,7 @@
     "Off": "Oprită",
     "Starting…": "Se pornește…",
     "Showing {0}": "Afișează {0}",
-    "Waze map": "harta Waze",
+    "map": "harta",
     "Error": "Eroare",
     "Frozen": "Blocată",
     "Waiting for the phone": "Se așteaptă telefonul",
@@ -66,7 +66,7 @@
     "Not enough space": "Spațiu insuficient",
     "Too large to save": "Prea mare pentru salvare",
     "Save failed": "Salvare eșuată",
-    "Waze on cluster": "Waze pe bord",
+    "Maps on cluster": "Hărți pe bord",
     "Show on": "Afișare pe",
     "Cluster": "Bord",
     "HUD (experimental)": "HUD (experimental)",
@@ -92,6 +92,8 @@
     "CarPlay Wi-Fi: {0}": "Wi-Fi CarPlay: {0}",
     "5 GHz": "5 GHz",
     "2.4 GHz": "2,4 GHz",
-    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "Sunetul se poate întrerupe. Pe iPhone, dezactivați și reactivați Wi-Fi."
+    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "Sunetul se poate întrerupe. Pe iPhone, dezactivați și reactivați Wi-Fi.",
+    "Own settings for this driver": "Setări proprii pentru acest șofer",
+    "Keep HUD map over BMW's pop-ups": "Păstrare hartă pe HUD peste ferestrele pop-up BMW"
   }
 }

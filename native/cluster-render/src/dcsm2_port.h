@@ -26,6 +26,20 @@
  * - a shown or parked scene the KOMBI unmaps or whose fetch it removes is
  *   lost (the stock map re-mapping over ours removes our fetch with no map
  *   transition, seen on the car; a locked slot unmaps every mapping in it);
+ * - a scene the KOMBI unmapped with a lock of its slot, still fetched, is
+ *   kept (keep): no unfetch, and remap maps it again with no fetch; a
+ *   REMOVED meanwhile makes remap send nothing (the slot manager then
+ *   releases it and asks for it in full); a refused re-map, or a REMOVED
+ *   before it shows, is a refusal as for any map;
+ * - a load is a fetch alone: FETCHED is told on_fetched and the scene kept
+ *   fetched, not mapped, for remap; an unmap (Port::unmap) is an unmap
+ *   alone, the scene kept so too. A REMOVED of a scene kept so, loaded or
+ *   kept through a lock, is lost (the slot manager acts on it for a loaded
+ *   target only), and remap sends nothing for it. How long the KOMBI
+ *   keeps a fetch that is not mapped is CAR-ONLY;
+ * - a fetch the KOMBI accepted (its E_DCSM_OK reply, or FETCHING) is
+ *   fetch_accepted until FETCHED (told on_fetched), FAILED or REMOVED;
+ * - the slot table names the stock HMI's content (slot_table);
  * - Dcsm2 going away loses every scene at once;
  * - the REMOVED that answers our own unfetch is not a loss, even when the
  *   same scene id was asked for again since (panel and HUD share one);
@@ -86,10 +100,27 @@ public:
     bool available() const override { return up_; }
     void request(const TargetSpec &t) override;
     void release(const TargetSpec &t) override;
+    bool keep(const TargetSpec &t) override;
+    bool preloads() const override { return true; }
+    void load(const TargetSpec &t) override;
+    bool unmap(const TargetSpec &t) override;
+    bool remap(const TargetSpec &t, int64_t now_ms) override;
     bool confirmed(const TargetSpec &t) const override { return !pending_.count(t.scene_id); }
     void take_over(const TargetSpec &t, uint64_t content) override;
     void refresh_slots() override { wire_->slots(); }
+    bool remind(const TargetSpec &t, int64_t now_ms) override;
+    int64_t accepted_ms(const TargetSpec &t) const override
+    {
+        auto it = contents_.find(t.scene_id);
+        return it != contents_.end() && it->second.phase == Phase::Mapping ? it->second.accepted_ms : -1;
+    }
     void no_answer(const TargetSpec &t, int64_t now_ms) override;
+    bool fetch_accepted(const TargetSpec &t) const override
+    {
+        auto it = contents_.find(t.scene_id);
+        return it != contents_.end() && it->second.phase == Phase::Fetching && it->second.fetch_accepted;
+    }
+    bool slot_table() const override { return true; }
     std::string status_text(int64_t now_ms) const override;
 
     /* What the KOMBI says, in the order it said it (render thread). */
@@ -114,12 +145,22 @@ public:
     void on_subscription(uint16_t event, uint16_t code, int64_t now_ms);
 
 private:
-    enum class Phase { Fetching, Mapping, Parked, Mapped, Refused, Lost };
+    enum class Phase { Fetching, Mapping, Parked, Mapped, Refused, Lost, Kept };
+    static const int64_t kMapAgainMs = 500;
     struct Content {
         TargetSpec spec;
         Phase phase = Phase::Fetching;
         bool map_asked = false;   /* a map went out and was not refused */
         bool fetched = false;     /* FETCHED, and not removed since */
+        bool fetch_accepted = false;   /* the fetch's E_DCSM_OK reply, or FETCHING, came */
+        bool load = false;        /* a load: no map at FETCHED */
+        /* The map's first E_DCSM_OK reply came then (-1: none) and no map
+         * status has come: the map is asked again every kMapAgainMs
+         * (remind), until a map status comes or a repeat is refused. */
+        int64_t accepted_ms = -1;
+        bool map_again = true;
+        int64_t map_ms = 0;       /* the last map went out */
+        int map_repeats = 0;
     };
 
     /* What the KOMBI sent since the service started. */

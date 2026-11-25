@@ -28,12 +28,16 @@ jobs:
   #   native/waze-on-cluster/  its jobs
   #   apps/<id>/               the app's tests
   #   native/<id>/test/        tests only: the tool's artifact leaves out test/
-  #   native/<id>/*.md, README.md, LICENSE, LICENSES/   nothing (a nested
+  #   native/<id>/*.md, README.md, CONTRIBUTING.md, AGENTS.md, CLAUDE.md,
+  #   LICENSE, LICENSES/
+  #                            nothing (a nested
   #                            .md counts toward its tool's artifact)
   #   release/, tools/, .github/, any other path    every job
   # Each changed component (a folder with a component.json or release.json in
   # the commit tested) is built twice from a clean export, on two runners, and
   # the artifacts compared.
+  # A pull request leaves versions as its base has them: the release sets
+  # them (release/README.md).
   changes:
     runs-on: ubuntu-24.04
     permissions:
@@ -65,7 +69,7 @@ jobs:
                 continue
               fi
               case $f in
-              README.md|LICENSE|LICENSES/*) ;;
+              README.md|CONTRIBUTING.md|AGENTS.md|CLAUDE.md|LICENSE|LICENSES/*) ;;
               native/cluster-render/test/*) cr=true woc=true ;;
               native/cluster-render/*) cr=true woc=true ids="$ids native/cluster-render native/waze-on-cluster" ;;
               native/waze-on-cluster/test/*) woc=true ;;
@@ -117,7 +121,12 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.12.0
+      # Mesa's software GLES through EGL, for test/text_gl_check, which then
+      # fails instead of skipping where it cannot draw (CR_REQUIRE_GL)
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libegl1 libgles2 libegl-mesa0 libgl1-mesa-dri
       - run: make -C native/cluster-render test
+        env:
+          CR_REQUIRE_GL: 1
 
   # the unit's toolchain (gcc 7.5) in Docker, preinstalled on the runner
   cluster-render-x86:
@@ -146,6 +155,7 @@ jobs:
         run: make -C native/waze-on-cluster test
       - run: node apps/robertn_waze_cluster/tools/test_control.js
       - run: node apps/robertn_waze_cluster/tools/test_page.js
+      - run: node apps/robertn_waze_cluster/tools/test_profiles.js
       - run: node apps/robertn_waze_cluster/tools/test_i18n.js
 
   waze-on-cluster-x86:
@@ -177,6 +187,10 @@ jobs:
         with:
           components: ${{ needs.changes.outputs.components }}
       - run: node release/test/release_test.js
+      # against the merge commit's base: versions stay as the base has them;
+      # a changed component's CHANGELOG says what changed under ## Unreleased
+      - if: github.event_name == 'pull_request'
+        run: node release/release.js versions HEAD^1
 
   release-b:
     needs: changes

@@ -17,13 +17,13 @@
     "Save logs": "Simpan log",
     "Not supported on this car": "Tidak didukung di mobil ini",
     "Unavailable": "Tidak tersedia",
-    "Untested version": "Versi belum diuji",
     "Changed by another tool": "Diubah oleh alat lain",
     "(after restart)": "(setelah mulai ulang)",
     "Status: {0}": "Status: {0}",
     "Connecting…": "Menghubungkan…",
     "Removed after restart": "Dihapus setelah mulai ulang",
     "Removed — head unit kept restarting": "Dihapus — head unit terus memulai ulang",
+    "Removed — Android Auto crashed": "Dihapus — Android Auto berhenti mendadak",
     "Patched after restart": "Diterapkan setelah mulai ulang",
     "Removing patch…": "Menghapus patch…",
     "Patching…": "Menerapkan patch…",
@@ -36,7 +36,7 @@
     "Off": "Mati",
     "Starting…": "Memulai…",
     "Showing {0}": "Menampilkan {0}",
-    "Waze map": "peta Waze",
+    "map": "peta",
     "Error": "Error",
     "Frozen": "Membeku",
     "Waiting for the phone": "Menunggu ponsel",
@@ -66,7 +66,7 @@
     "Not enough space": "Ruang tidak cukup",
     "Too large to save": "Terlalu besar untuk disimpan",
     "Save failed": "Gagal menyimpan",
-    "Waze on cluster": "Waze di panel instrumen",
+    "Maps on cluster": "Peta di panel instrumen",
     "Show on": "Tampilkan di",
     "Cluster": "Panel",
     "HUD (experimental)": "HUD (eksperimental)",
@@ -92,6 +92,8 @@
     "CarPlay Wi-Fi: {0}": "Wi-Fi CarPlay: {0}",
     "5 GHz": "5 GHz",
     "2.4 GHz": "2,4 GHz",
-    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "Audio mungkin terputus. Di iPhone Anda, matikan lalu nyalakan Wi-Fi."
+    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "Audio mungkin terputus. Di iPhone Anda, matikan lalu nyalakan Wi-Fi.",
+    "Own settings for this driver": "Pengaturan sendiri untuk pengemudi ini",
+    "Keep HUD map over BMW's pop-ups": "Pertahankan peta di HUD di atas pop-up BMW"
   }
 }

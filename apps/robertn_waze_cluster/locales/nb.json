@@ -17,13 +17,13 @@
     "Save logs": "Lagre logger",
     "Not supported on this car": "Støttes ikke i denne bilen",
     "Unavailable": "Utilgjengelig",
-    "Untested version": "Utestet versjon",
     "Changed by another tool": "Endret av et annet verktøy",
     "(after restart)": "(etter omstart)",
     "Status: {0}": "Status: {0}",
     "Connecting…": "Kobler til…",
     "Removed after restart": "Fjernes etter omstart",
     "Removed — head unit kept restarting": "Fjernet — hovedenheten startet stadig på nytt",
+    "Removed — Android Auto crashed": "Fjernet — Android Auto krasjet",
     "Patched after restart": "Patchet etter omstart",
     "Removing patch…": "Fjerner patch…",
     "Patching…": "Patcher…",
@@ -36,7 +36,7 @@
     "Off": "Av",
     "Starting…": "Starter…",
     "Showing {0}": "Viser {0}",
-    "Waze map": "Waze-kart",
+    "map": "kart",
     "Error": "Feil",
     "Frozen": "Frosset",
     "Waiting for the phone": "Venter på telefonen",
@@ -66,7 +66,7 @@
     "Not enough space": "Ikke nok plass",
     "Too large to save": "For stor til å lagres",
     "Save failed": "Lagring mislyktes",
-    "Waze on cluster": "Waze i instrumentpanelet",
+    "Maps on cluster": "Kart i instrumentpanelet",
     "Show on": "Vis i",
     "Cluster": "Instrumentpanel",
     "HUD (experimental)": "HUD (eksperimentell)",
@@ -92,6 +92,8 @@
     "CarPlay Wi-Fi: {0}": "CarPlay Wi-Fi: {0}",
     "5 GHz": "5 GHz",
     "2.4 GHz": "2,4 GHz",
-    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "Lyden kan falle ut. Slå Wi-Fi av og på igjen på iPhone."
+    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "Lyden kan falle ut. Slå Wi-Fi av og på igjen på iPhone.",
+    "Own settings for this driver": "Egne innstillinger for denne føreren",
+    "Keep HUD map over BMW's pop-ups": "Behold kart i HUD over BMWs popup-vinduer"
   }
 }

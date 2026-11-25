@@ -17,13 +17,13 @@
     "Save logs": "Uložit protokoly",
     "Not supported on this car": "V tomto voze nepodporováno",
     "Unavailable": "Nedostupné",
-    "Untested version": "Netestovaná verze",
     "Changed by another tool": "Změněno jiným nástrojem",
     "(after restart)": "(po restartu)",
     "Status: {0}": "Stav: {0}",
     "Connecting…": "Připojování…",
     "Removed after restart": "Odebráno po restartu",
     "Removed — head unit kept restarting": "Odebráno — jednotka se stále restartovala",
+    "Removed — Android Auto crashed": "Odebráno — Android Auto spadlo",
     "Patched after restart": "Opraveno po restartu",
     "Removing patch…": "Odebírání opravy…",
     "Patching…": "Použití opravy…",
@@ -36,7 +36,7 @@
     "Off": "Vypnuto",
     "Starting…": "Spouštění…",
     "Showing {0}": "Zobrazeno: {0}",
-    "Waze map": "Mapa Waze",
+    "map": "mapa",
     "Error": "Chyba",
     "Frozen": "Zamrzlo",
     "Waiting for the phone": "Čeká se na telefon",
@@ -66,7 +66,7 @@
     "Not enough space": "Nedostatek místa",
     "Too large to save": "Příliš velké k uložení",
     "Save failed": "Uložení selhalo",
-    "Waze on cluster": "Waze na přístrojovém štítu",
+    "Maps on cluster": "Mapy na přístrojovém štítu",
     "Show on": "Zobrazit na",
     "Cluster": "Štít",
     "HUD (experimental)": "HUD (experimentální)",
@@ -92,6 +92,8 @@
     "CarPlay Wi-Fi: {0}": "Wi-Fi CarPlay: {0}",
     "5 GHz": "5 GHz",
     "2.4 GHz": "2,4 GHz",
-    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "Zvuk se může přerušovat. Na iPhonu vypněte a zapněte Wi-Fi."
+    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "Zvuk se může přerušovat. Na iPhonu vypněte a zapněte Wi-Fi.",
+    "Own settings for this driver": "Vlastní nastavení pro tohoto řidiče",
+    "Keep HUD map over BMW's pop-ups": "Ponechat mapu na HUD přes vyskakovací okna BMW"
   }
 }
