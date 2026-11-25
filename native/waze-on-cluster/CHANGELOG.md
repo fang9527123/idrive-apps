@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+CarPlay: ShowUI asks for the turn card and arrival-time card
+(`maps:/car/instrumentcluster?showETA=yes`). Re-patch and reconnect after
+install.
+
 ## 0.14.14
 
 Android Auto: Patch, Remove patch, Zoom and the turn card take effect at

@@ -308,22 +308,23 @@ static std::vector<const FakeQuad *> atlas_quads(FakeGraph *g)
  * The image case includes first-upload visibility gating: two extra show
  * transitions, with identical writes, flushes and injected failure counts.
  * compositor_test separately verifies no uninitialized pixels become visible. */
+/* Hashes/call counts include the fork's corner / gauge / mask uniforms. */
 static const uint64_t kMainTrace[2][6] = {
-    {0xe0b20733c2a49aeeull, 1208, 31669248, 227, 5, 0},
-    {0x47d22f12de74c5f8ull, 1317, 33012736, 256, 5, 8},
+    {0xa6dbd7d71ed43a14ull, 1236, 31669248, 227, 5, 0},
+    {0xb298c2f26a964742ull, 1345, 33012736, 256, 5, 8},
 };
 /* A camera joining a shown map, and sets (video_trace.h join_trace). */
 static const uint64_t kMainJoinTrace[2][6] = {
-    {0x18f19b095ea37fc8ull, 3380, 21038592, 468, 0, 0},
-    {0xdf96bf1d74f5b41bull, 3390, 21038592, 541, 0, 0},
+    {0x158025cb0f18f8beull, 3464, 21038592, 468, 0, 0},
+    {0x5489e715c3ac2dull, 3474, 21038592, 541, 0, 0},
 };
 /* Two videos (video_trace.h two_video_trace), recorded the same way. On the
  * map the camera is opaque over the map, which leaves the 15 tiles wholly
  * under it unwritten (occlusion_test.cpp): that run is recorded from this
  * build. */
 static const uint64_t kMainTwoTrace[2][6] = {
-    {0x2b96bfc56be05ffaull, 3287, 40503808, 396, 4, 21},
-    {0x8f0173ab738d414dull, 3146, 40896000, 507, 5, 0},
+    {0xfc9fccdcfd564754ull, 3343, 40503808, 396, 4, 21},
+    {0xf9d743377554e026ull, 3188, 40896000, 507, 5, 0},
 };
 
 static void single_video()

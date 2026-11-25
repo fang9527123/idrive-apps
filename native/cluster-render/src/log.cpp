@@ -168,6 +168,17 @@ void log_lines_since(uint64_t *seq, std::vector<std::string> *out)
 }  // namespace cld
 
 
+/* Rounded corners and soft edge of the video's drawn rect (fork). */
+namespace crs {
+float kCornerRadius = 120.0f;
+float kCornerFeather = 50.0f;
+void set_video_corner_defaults(float radius, float feather)
+{
+    kCornerRadius = radius;
+    kCornerFeather = feather;
+}
+}
+
 /* Gauge circles carved out of the map with feathered edges. */
 namespace crs {
 float kGaugeLeftX = 0.0f;

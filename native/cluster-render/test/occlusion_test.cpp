@@ -1987,18 +1987,19 @@ static void forced_skipped()
 /* Recorded with video_trace.h from the build before hidden tiles
  * (cluster-render-video-composite at 83a34d0): hash, calls, write bytes,
  * flushes, failed flushes, failed writes. */
-static const uint64_t kBaseTranslucent[6] = {0x65f389e6faaa92beull, 3087, 40754688, 379, 4, 30};
-static const uint64_t kBaseTurned[6] = {0xe3d2afd834497d9eull, 3087, 40754688, 379, 4, 30};
-static const uint64_t kBaseHud[6] = {0xd034cccd82a2b14full, 1460, 30050304, 334, 0, 0};
+/* Hashes/call counts include the fork's corner / gauge / mask uniforms. */
+static const uint64_t kBaseTranslucent[6] = {0x2977ec3a30fe198cull, 3143, 40754688, 379, 4, 30};
+static const uint64_t kBaseTurned[6] = {0xbaabc16e9e0f2f2cull, 3143, 40754688, 379, 4, 30};
+static const uint64_t kBaseHud[6] = {0xe288e946333f97c7ull, 1481, 30050304, 334, 0, 0};
 /* First-upload visibility adds one show after the image has pixels. Bytes,
  * flushes and failures are unchanged; compositor_test checks the deferred
  * upload independently, including a flush by another layer. */
-static const uint64_t kBaseOverlay[6] = {0x9e0266fbdff279cdull, 727, 99647488, 168, 0, 0};
+static const uint64_t kBaseOverlay[6] = {0x928a9eedbd2b7550ull, 741, 99647488, 168, 0, 0};
 /* A minute (camera_minute_trace), kinds 0 to 4: the trace, then the map's
  * frames, bytes and packed frames and the camera's. */
 static const uint64_t kBaseMinute[5][12] = {
     {0x8c91ce7f810aafc2ull, 9278, 187145216, 1363, 0, 0, 896, 146554880, 370, 846, 40590336, 208},
-    {0xa55b718dab651bb6ull, 9278, 187145216, 1363, 0, 0, 896, 146554880, 370, 846, 40590336, 208},
+    {0x26c5b250d05bcf3eull, 9306, 187145216, 1363, 0, 0, 896, 146554880, 370, 846, 40590336, 208},
     {0x30ea992b354a52a2ull, 21242, 187145216, 2533, 0, 0, 896, 146554880, 370, 846, 40590336, 208},
     {0xfffc61acf2fc7cf1ull, 8239, 336015360, 1061, 0, 0, 540, 74789888, 261, 1058, 261225472, 912},
     {0x1d2b2dcf75e6169bull, 12066, 309237760, 1394, 0, 0, 683, 105604096, 284, 1380, 203633664, 339},

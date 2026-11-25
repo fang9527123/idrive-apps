@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+CarPlay: the cluster map asks the phone for the turn card and arrival-time
+card (ShowUI `?showETA=yes`). Re-patch CarPlay and reconnect after install.
+
 ## 0.6.16
 
 Android Auto: Patch, Remove patch, Zoom and Hide phone's turn card can be

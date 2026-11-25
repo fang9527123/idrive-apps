@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+Keep the fork's rounded corners, gauge cut-outs and panel polygon mask on
+the video layer after syncing with upstream.
+
 ## 0.8.12
 
 `--skip` shows a scene file's animation sequence at its end on iDrive 7: at
