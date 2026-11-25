@@ -17,13 +17,13 @@
     "Save logs": "שמירת יומנים",
     "Not supported on this car": "לא נתמך ברכב זה",
     "Unavailable": "לא זמין",
-    "Untested version": "גרסה שלא נבדקה",
     "Changed by another tool": "שונה על ידי כלי אחר",
     "(after restart)": "(לאחר הפעלה מחדש)",
     "Status: {0}": "מצב: {0}",
     "Connecting…": "מתחבר…",
     "Removed after restart": "יוסר לאחר הפעלה מחדש",
     "Removed — head unit kept restarting": "הוסר — המערכת המשיכה להיפעל מחדש",
+    "Removed — Android Auto crashed": "הוסר — Android Auto קרס",
     "Patched after restart": "יוחל לאחר הפעלה מחדש",
     "Removing patch…": "מסיר תיקון…",
     "Patching…": "מחיל תיקון…",
@@ -36,7 +36,7 @@
     "Off": "כבוי",
     "Starting…": "בהפעלה…",
     "Showing {0}": "מציג {0}",
-    "Waze map": "מפת Waze",
+    "map": "מפה",
     "Error": "שגיאה",
     "Frozen": "קפוא",
     "Waiting for the phone": "ממתין לטלפון",
@@ -66,7 +66,7 @@
     "Not enough space": "אין מספיק מקום",
     "Too large to save": "גדול מדי לשמירה",
     "Save failed": "השמירה נכשלה",
-    "Waze on cluster": "Waze בלוח המחוונים",
+    "Maps on cluster": "מפות בלוח המחוונים",
     "Show on": "הצגה על",
     "Cluster": "לוח המחוונים",
     "HUD (experimental)": "HUD (ניסיוני)",
@@ -92,6 +92,8 @@
     "CarPlay Wi-Fi: {0}": "Wi-Fi של CarPlay: {0}",
     "5 GHz": "5 GHz",
     "2.4 GHz": "2.4 GHz",
-    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "השמע עלול להיקטע. ב-iPhone, כבו את ה-Wi-Fi והפעילו אותו מחדש."
+    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "השמע עלול להיקטע. ב-iPhone, כבו את ה-Wi-Fi והפעילו אותו מחדש.",
+    "Own settings for this driver": "הגדרות נפרדות לנהג זה",
+    "Keep HUD map over BMW's pop-ups": "השארת המפה ב-HUD מעל החלונות הקופצים של BMW"
   }
 }

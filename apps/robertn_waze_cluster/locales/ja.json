@@ -17,13 +17,13 @@
     "Save logs": "ログを保存",
     "Not supported on this car": "この車両は非対応",
     "Unavailable": "利用不可",
-    "Untested version": "未検証のバージョン",
     "Changed by another tool": "他のツールが変更",
     "(after restart)": "（再起動後）",
     "Status: {0}": "状態：{0}",
     "Connecting…": "接続中…",
     "Removed after restart": "再起動後に解除",
     "Removed — head unit kept restarting": "解除 — ヘッドユニットが再起動を繰り返しました",
+    "Removed — Android Auto crashed": "解除 — Android Auto がクラッシュしました",
     "Patched after restart": "再起動後に適用",
     "Removing patch…": "パッチ解除中…",
     "Patching…": "パッチ適用中…",
@@ -36,7 +36,7 @@
     "Off": "オフ",
     "Starting…": "起動中…",
     "Showing {0}": "{0}を表示中",
-    "Waze map": "Wazeマップ",
+    "map": "地図",
     "Error": "エラー",
     "Frozen": "フリーズ",
     "Waiting for the phone": "スマートフォン待ち",
@@ -66,7 +66,7 @@
     "Not enough space": "空き容量不足",
     "Too large to save": "サイズが大きすぎて保存不可",
     "Save failed": "保存に失敗",
-    "Waze on cluster": "Waze メーター表示",
+    "Maps on cluster": "地図 メーター表示",
     "Show on": "表示先",
     "Cluster": "メーター",
     "HUD (experimental)": "HUD（試験的）",
@@ -92,6 +92,8 @@
     "CarPlay Wi-Fi: {0}": "CarPlayのWi-Fi：{0}",
     "5 GHz": "5 GHz",
     "2.4 GHz": "2.4 GHz",
-    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "音声が途切れることがあります。iPhoneでWi-Fiをオフにしてからオンにしてください。"
+    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "音声が途切れることがあります。iPhoneでWi-Fiをオフにしてからオンにしてください。",
+    "Own settings for this driver": "このドライバー専用の設定",
+    "Keep HUD map over BMW's pop-ups": "HUDの地図をBMWのポップアップより優先"
   }
 }

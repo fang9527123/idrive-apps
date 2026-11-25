@@ -19,13 +19,13 @@
     "Save logs": "儲存記錄檔",
     "Not supported on this car": "此車輛不支援",
     "Unavailable": "無法使用",
-    "Untested version": "未經測試的版本",
     "Changed by another tool": "已被其他工具變更",
     "(after restart)": "（重新啟動後）",
     "Status: {0}": "狀態：{0}",
     "Connecting…": "連線中…",
     "Removed after restart": "重新啟動後移除",
     "Removed — head unit kept restarting": "已移除 — 主機反覆重新啟動",
+    "Removed — Android Auto crashed": "已移除 — Android Auto 當機",
     "Patched after restart": "重新啟動後套用",
     "Removing patch…": "正在移除修補…",
     "Patching…": "正在套用修補…",
@@ -38,7 +38,7 @@
     "Off": "關閉",
     "Starting…": "啟動中…",
     "Showing {0}": "正在顯示 {0}",
-    "Waze map": "Waze 地圖",
+    "map": "地圖",
     "Error": "錯誤",
     "Frozen": "畫面凍結",
     "Waiting for the phone": "等待手機",
@@ -68,7 +68,7 @@
     "Not enough space": "空間不足",
     "Too large to save": "檔案過大，無法儲存",
     "Save failed": "儲存失敗",
-    "Waze on cluster": "Waze 儀表板顯示",
+    "Maps on cluster": "地圖儀表板顯示",
     "Show on": "顯示位置",
     "Cluster": "儀表板",
     "HUD (experimental)": "HUD（實驗性）",
@@ -94,6 +94,8 @@
     "CarPlay Wi-Fi: {0}": "CarPlay Wi-Fi：{0}",
     "5 GHz": "5 GHz",
     "2.4 GHz": "2.4 GHz",
-    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "音訊可能中斷。請在 iPhone 上關閉再開啟 Wi-Fi。"
+    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "音訊可能中斷。請在 iPhone 上關閉再開啟 Wi-Fi。",
+    "Own settings for this driver": "此駕駛的專屬設定",
+    "Keep HUD map over BMW's pop-ups": "HUD 地圖保持在 BMW 彈出視窗之上"
   }
 }

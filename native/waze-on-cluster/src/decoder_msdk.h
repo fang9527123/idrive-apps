@@ -42,7 +42,9 @@
  * skipped: it comes out with no atlas.
  * Frames come out in decoding order, each as soon as it is decoded. A stream
  * with B frames needs display order: the first B slice switches the decoder
- * to it at the next SPS, and B frames before that come out of order.
+ * to it at the next SPS, and B frames before that come out of order. The
+ * first B slice, and each sequence that starts in another order than the
+ * last, are logged.
  *
  * Decoding starts at the first access unit that carries an SPS; anything
  * before it is dropped. Damaged or incomplete access units (a lost packet)
@@ -81,7 +83,23 @@
  * crop, the restart when a picture's rect after the crop differs from the
  * one VPP was set up for, and DecodeHeader reading a later SPS while the
  * decoder runs (Intel's reference allows it at any time). Nor is GPU copy:
- * the CM runtime starting on the unit, its copy's result and cost. */
+ * the CM runtime starting on the unit, its copy's result and cost.
+ *
+ * A part (set_part, hosted_vpp_scale; nothing of it runs without): VPP makes
+ * only that part of the output, at its size, so the CPU neither scales it
+ * nor copies and packs the rest. Asked for at any time, it is taken at the
+ * next picture: VPP reset (MFXVideoVPP_Reset) to the part's rect of its
+ * input and the part's size, the sequence's decode untouched, and each
+ * picture's input rect set to the part's, after waiting for its decode (as
+ * src_crop's are). A new sequence sets VPP up for the whole output as
+ * always, then resets it for the part. A part VPP cannot make (an odd edge,
+ * outside the output, larger than its rect, more than kMaxPartScale times
+ * smaller, a reset or a VPP run with it failing) is logged once and not
+ * asked of VPP again until the next sequence: its pictures come whole, VPP
+ * set up for the whole output again (a reset, else closed and set up
+ * again). Unset, VPP is reset for the whole output.
+ * UNVERIFIED (CAR-ONLY): the unit's VPP resetting to a smaller output with
+ * opaque input, taking each picture's input rect, its picture and cost. */
 #ifndef WOC_DECODER_MSDK_H
 #define WOC_DECODER_MSDK_H
 
@@ -93,6 +111,7 @@
 #include <vector>
 
 #include "frame_clock.h"
+#include "map_rect.h"
 #include "source_crop.h"
 
 namespace woc {
@@ -109,12 +128,24 @@ struct VideoFrame {
      * feed/flush/shutdown. Null for a frame decoded without a picture, and
      * for one the same as the last. */
     std::vector<uint8_t> *atlas;
+    /* Access units the decoder took in after this frame's own before it
+     * output this one: 0 when each comes out as it is decoded; -1 unknown
+     * (MSDK did not carry the frame's number to it). */
+    int32_t held;
+    /* The part of the output it is (Decoder::set_part), w x h its size;
+     * unset: the whole output. */
+    OutputPart part;
 };
 
 class Decoder {
 public:
     using FrameSink = std::function<void(const VideoFrame &)>;
+    /* An SPS NAL unit from its header byte, without a start code. */
+    using SpsSink = std::function<void(const uint8_t *nal, size_t len)>;
     static const int kFailLimit = 30;
+    /* A part's rect of VPP's input (part_rect, after src_crop) at most this
+     * many times its size in each direction. */
+    static const uint32_t kMaxPartScale = 8;
 
     Decoder();
     ~Decoder();
@@ -147,6 +178,20 @@ public:
      * again. */
     void forget_last();
 
+    /* From the next picture on, only part p of the output, at its size
+     * (unset: the whole output); kept across init(). The header's "A
+     * part". */
+    void set_part(const OutputPart &p);
+
+    /* Gives the newest frame that came out, when it came out without a
+     * picture (feed's picture false), its picture now, through cb as feed()
+     * would: while its surface still holds it (the decoder has not taken
+     * that surface since), and unless its picture needs another VPP
+     * input rect (a restart starts at an access unit). False when there is
+     * no such frame, or with *err set when its VPP run failed. True does not
+     * mean cb was called: VPP may hold the input or give no output. */
+    bool picture_skipped(const FrameSink &cb, std::string *err);
+
     /* End of stream: decodes what is buffered and delivers every remaining
      * frame. The next feed() starts a new stream at its first SPS. */
     void flush(const FrameSink &cb);
@@ -164,10 +209,18 @@ public:
      * included, and, unless src_crop's check waited for it already, for its
      * decode, in microseconds. */
     crk::Spread vpp_us() const;
+    /* Whether the current or last sequence outputs in display order. */
+    bool display_order() const;
+
+    /* Called with each SPS of an access unit the decoder takes, from
+     * feed() and flush(). */
+    void on_sps(SpsSink sink) { sps_sink_ = std::move(sink); }
 
 private:
     struct State;
     std::unique_ptr<State> s_;
+    SpsSink sps_sink_;
+    OutputPart part_;
 };
 
 }  // namespace woc

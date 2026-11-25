@@ -32,8 +32,9 @@
  * render and the state as the render reports it, nothing known or sent
  * while closed or with a render that has no switch, nothing sent while the
  * cluster renderer holds the box shown. Where the map shows (the cluster,
- * the HUD or both, never neither) and the HUD's size slider, place and
- * guard; an asked HUD size the render does not show goes after a moment,
+ * the HUD, both or Off, from the cluster and from both, the HUD's size and
+ * place refused while Off) and the HUD's size slider, place, Keep HUD map
+ * over BMW's pop-ups and guard; an asked HUD size the render does not show goes after a moment,
  * on a failed save and on a render reconnect. CarPlay Wi-Fi: the band patchd reports, 5 GHz or 2.4 GHz, the
  * line under it on 2.4 GHz only, nothing while the band is unknown, from a
  * patchd before it, or with patchd gone.
@@ -208,7 +209,7 @@ test('a render without the switch: not known, nothing sent', async (render, patc
     c.close();
 });
 
-test('the cluster map: off unless CarPlay or Android Auto is patched with nothing pending, either one', async (render, patch) => {
+test('the cluster map: on while CarPlay or Android Auto runs its patch, a change waiting for the restart or not, either one', async (render, patch) => {
     const c = control();
     c.open();
     await until('connected', () => c.aa() && c.connectedRender());
@@ -223,10 +224,26 @@ test('the cluster map: off unless CarPlay or Android Auto is patched with nothin
     assert.strictEqual(c.mapText(), 'Cluster map: Waiting for the phone');
     render.stream(true);
     await until('showing', () => c.mapText() === `Cluster map: Showing ${RENDER_PAGE} — ${RENDER_FPS}`);
-    patch.aa = { state: 'unknown', pending: 'apply', aapd: 'deferred', dpi: 180, diskCard: 'shown', density: 180, densities: D };
+    const SHOWING = `Cluster map: Showing ${RENDER_PAGE} — ${RENDER_FPS}`;
+    /* A Zoom waiting over the running patch: aapd still draws the map. */
+    patch.aa = { state: 'unknown', pending: 'apply', aapd: 'deferred', dpi: 170, diskCard: 'shown', density: 170, densities: D, runDpi: 180, runCard: 'shown' };
     patch.announce('original', null, null);
-    await until('pending', () => c.aaStatusText() === 'Status: Patched after restart');
-    assert.strictEqual(c.mapText(), 'Cluster map: Off', 'nothing in effect while its change waits');
+    await until('zoom pending', () => c.aaStatusText() === 'Status: Patched after restart' && c.zoomText() === 'Zoom: 170 dpi (after restart)');
+    assert.strictEqual(c.mapText(), SHOWING, 'the running patch draws the map while a Zoom waits');
+    /* Remove patch waiting over the running patch: the map stays until the restart. */
+    patch.aa = { state: 'unknown', pending: 'revert', aapd: 'deferred', density: 170, densities: D, runDpi: 180, runCard: 'shown' };
+    patch.announce('original', null, null);
+    await until('removal pending', () => c.aaStatusText() === 'Status: Removed after restart');
+    assert.strictEqual(c.mapText(), SHOWING, 'the running patch draws the map while Remove patch waits');
+    /* A patchd that does not say what runs: as it was. */
+    patch.aa = { state: 'unknown', pending: 'apply', aapd: 'deferred', dpi: 170, diskCard: 'shown', density: 170, densities: D };
+    patch.announce('original', null, null);
+    await until('pending, run unknown', () => c.aaStatusText() === 'Status: Patched after restart' && !('runDpi' in c.aa()));
+    assert.strictEqual(c.mapText(), SHOWING, 'unknown run: as it was');
+    /* Patch waiting over a stock aapd: nothing draws the map until the restart. */
+    patch.aa = { state: 'unknown', pending: 'apply', aapd: 'deferred', dpi: 180, diskCard: 'shown', density: 180, densities: D, runDpi: null, runCard: null };
+    patch.announce('original', null, null);
+    await until('patch pending over stock', () => c.mapText() === 'Cluster map: Off');
     c.close();
 });
 
@@ -244,7 +261,7 @@ test('the cluster map stays while a change runs or fails on the side in effect, 
     await until('busy', () => c.aaStatusText() === 'Status: Patching…');
     assert.strictEqual(c.mapText(), 'Cluster map: Waiting for the phone', 'Android Auto busy');
     send({ state: 'original', aa: Object.assign({}, aaOn, { state: 'error', reason: 'Command failed' }) });
-    await until('failed', () => c.aaStatusText() === 'Status: Failed');
+    await until('failed', () => c.aaStatusText() === 'Status: Failed, Command failed');
     assert.strictEqual(c.mapText(), 'Cluster map: Waiting for the phone', 'Android Auto failed, no status after it');
     /* CarPlay alone */
     send({ state: 'patched', panel: 'high', aa: { state: 'original', density: 180, densities: D } });
@@ -254,8 +271,17 @@ test('the cluster map stays while a change runs or fails on the side in effect, 
     await until('CarPlay busy', () => c.statusText() === 'Status: Patching…');
     assert.strictEqual(c.mapText(), 'Cluster map: Waiting for the phone', 'CarPlay busy');
     send({ state: 'error', reason: 'remount rw: EBUSY', aa: { state: 'original', density: 180, densities: D } });
-    await until('CarPlay failed', () => c.statusText() === 'Status: Failed');
+    await until('CarPlay failed', () => c.statusText() === 'Status: Failed, remount rw: EBUSY');
     assert.strictEqual(c.mapText(), 'Cluster map: Waiting for the phone', 'CarPlay failed');
+    /* a Patch the conflict refused: the conflict, in the words both sections use */
+    send({ state: 'error', reason: 'carplay was modified by something else', conflict: 'carplay was modified by something else',
+        aa: { state: 'original', density: 180, densities: D } });
+    await until('CarPlay refused', () => c.statusText() === 'Status: Changed by another tool');
+    send({ state: 'original', aa: { state: 'error', reason: 'aapd was modified by something else', conflict: 'aapd was modified by something else', density: 180, densities: D } });
+    await until('Android Auto refused', () => c.aaStatusText() === 'Status: Changed by another tool');
+    /* a Patch whose plan failed its own check: refused for this build */
+    send({ state: 'error', reason: 'not patchable: the edited image does not verify (sink)', aa: { state: 'original', density: 180, densities: D } });
+    await until('CarPlay not patchable', () => c.statusText() === 'Status: Not supported on this car');
     send({ state: 'original', aa: { state: 'original', density: 180, densities: D } });
     await until('both off', () => c.mapText() === 'Cluster map: Off');
     c.close();
@@ -276,7 +302,7 @@ test('the turn card checkbox: the asked card until its change ends; the one on d
     await sleep(50);
     assert.deepStrictEqual([c.aa().diskCard, c.cardHidden()], ['shown', true], 'the asked card while the change runs, the earlier error notwithstanding');
     patch.releaseAa();
-    await until('done', () => c.aa().state === 'patched' && c.aa().diskCard === 'hidden');
+    await until('done', () => c.aa().pending === 'apply' && c.aa().diskCard === 'hidden');
     assert.strictEqual(c.cardHidden(), true, 'the card on disk once it ends');
     /* a change that fails: the card on disk again */
     c.toggleCard();
@@ -307,7 +333,7 @@ test('the turn card checkbox: the asked card until its change ends; the one on d
     c.close();
 });
 
-test('where the map shows: the cluster by default; the HUD and both through the render, patchd saves each change; never neither', async (render, patch) => {
+test('where the map shows: the cluster by default; the HUD and both through the render, patchd saves each change; Off for neither', async (render, patch) => {
     const c = control();
     c.open();
     await until('connected', () => c.connectedRender() && c.connectedPatch());
@@ -336,10 +362,39 @@ test('where the map shows: the cluster by default; the HUD and both through the 
     await until('each saved', () => patch.received.filter((m) => /^(cluster|hud)$/.test(m.cmd)).length === 4);
     assert.deepStrictEqual(patch.received.filter((m) => /^(cluster|hud)$/.test(m.cmd)),
         [{ cmd: 'hud', on: 1 }, { cmd: 'cluster', on: 0 }, { cmd: 'cluster', on: 1 }, { cmd: 'hud', on: 0 }]);
-    /* a render on neither (its own configuration): no choice to show, one to make */
+    /* Off: the cluster off, the HUD stays off, nothing else sent; the stock map back */
+    render.received.length = 0;
+    patch.received.length = 0;
+    c.showOn('off');
+    assert.deepStrictEqual([c.shownOn(), c.clusterOn(), c.hudOn()], ['off', false, false], 'Off at once, before the render answers');
+    await until('off', () => render.cluster === 0 && render.hud === 0 && c.renderStatus.cluster === 0 && c.mapText() === 'Cluster map: Off');
+    assert.deepStrictEqual(render.received, [{ cmd: 'cluster', on: '0' }], 'only the cluster off');
+    await until('off saved', () => patch.received.some((m) => m.cmd === 'cluster'));
+    assert.deepStrictEqual(patch.received.filter((m) => /^(cluster|hud)$/.test(m.cmd)), [{ cmd: 'cluster', on: 0 }]);
+    assert(c.hudText() === 'HUD map: Off' && c.canChooseShownOn() && !c.canChangeHudSize() && !c.canCentreHud(), 'Off: the choice, not the HUD\'s size and place');
+    c.showOn('off');
+    c.setHudSizeStep(6);
+    c.moveHud('left');
+    await sleep(50);
+    assert.deepStrictEqual(render.received, [{ cmd: 'cluster', on: '0' }], 'Off again, the HUD\'s size and place: nothing sent');
+    /* both, then Off from both: each display off, both saved */
+    c.showOn('both');
+    await until('both from off', () => render.cluster === 1 && render.hud === 1 && c.shownOn() === 'both' && c.renderStatus.hud === 1);
+    render.received.length = 0;
+    patch.received.length = 0;
+    c.showOn('off');
+    await until('off from both', () => render.cluster === 0 && render.hud === 0 && c.renderStatus.cluster === 0 && c.renderStatus.hud === 0 &&
+        c.shownOn() === 'off' && c.mapText() === 'Cluster map: Off' && c.hudText() === 'HUD map: Off');
+    assert.deepStrictEqual(render.received, [{ cmd: 'cluster', on: '0' }, { cmd: 'hud', on: '0' }], 'both off');
+    await until('both saved', () => patch.received.filter((m) => /^(cluster|hud)$/.test(m.cmd)).length === 2);
+    assert.deepStrictEqual(patch.received.filter((m) => /^(cluster|hud)$/.test(m.cmd)), [{ cmd: 'cluster', on: 0 }, { cmd: 'hud', on: 0 }]);
+    c.showOn('cluster');
+    await until('the cluster from off', () => render.cluster === 1 && render.hud === 0 && c.shownOn() === 'cluster' &&
+        /^Cluster map: Showing/.test(c.mapText()));
+    /* a render on neither from its own configuration reads as Off, a choice still to make */
     render.cluster = 0;
     render.announce(render.state, render.reason);
-    await until('neither', () => c.shownOn() === null && c.canChooseShownOn());
+    await until('neither', () => c.shownOn() === 'off' && c.canChooseShownOn());
     c.close();
     assert(!c.canChooseShownOn(), 'no choice while the render is not connected');
     assert.deepStrictEqual([c.shownOn(), c.hudText()], [null, 'HUD map: Unavailable']);
@@ -385,6 +440,32 @@ test('the HUD map size as a slider: 5 % steps from 30 to 85 %, Standard at the s
     await until('each one saved', () => patch.received.filter((m) => m.cmd === 'hud-size').map((m) => m.hud_width_pct).join() === '60,85,30');
     c.close();
     assert.deepStrictEqual([c.hudSizeText(), c.hudSizeStep()], ['Size: —', null], 'nothing known while closed');
+});
+
+test('the HUD map over BMW\'s pop-ups: gives way by default; a flip goes to the render and patchd, the render\'s status shows it; ' +
+    'greyed while the HUD is off and for a render without it', async (render, patch) => {
+    const c = control();
+    c.open();
+    await until('connected', () => c.connectedRender() && c.connectedPatch());
+    render.stream(true);
+    await until('the HUD off', () => c.renderStatus && c.hudOn() === false);
+    assert.deepStrictEqual([c.hudKeepShown(), c.canKeepHud()], [false, false], 'giving way, greyed while the HUD is off');
+    c.toggleHudKeep();
+    render.hud = 1;
+    render.announce(render.state, render.reason);
+    await until('on', () => c.canKeepHud());
+    assert.strictEqual(render.received.filter((m) => m.hud_keep_shown !== undefined).length, 0, 'nothing sent while greyed');
+    c.toggleHudKeep();
+    await until('kept shown', () => c.hudKeepShown() === true && render.hudKeep === 1);
+    await until('saved', () => patch.map.hud_keep_shown === 1);
+    c.toggleHudKeep();
+    await until('gives way again', () => c.hudKeepShown() === false && patch.map.hud_keep_shown === 0);
+    assert.deepStrictEqual(render.received.filter((m) => m.hud_keep_shown !== undefined), [{ cmd: 'hud', hud_keep_shown: '1' }, { cmd: 'hud', hud_keep_shown: '0' }]);
+    assert.deepStrictEqual(patch.received.filter((m) => m.cmd === 'hud-keep-shown'), [{ cmd: 'hud-keep-shown', on: 1 }, { cmd: 'hud-keep-shown', on: 0 }]);
+    render.hudKeep = null;
+    render.announce(render.state, render.reason);
+    await until('a render without it', () => c.hudKeepShown() === null && !c.canKeepHud());
+    c.close();
 });
 
 test('an asked HUD size the render does not show: the render\'s own after a moment, at once on a render reconnect; ' +
@@ -552,6 +633,35 @@ test('an older full-frame safe area prompts CarPlay\'s Patch button, which write
     patch._broadcast({ ev: 'status', state: 'patched', panel: 'high', mode: 'avb', res: '1088x480' });
     await until('older daemon', () => c.statusText() === 'Status: Patched' && c.mapText() === 'Cluster map: Waiting for the phone' && c.patchStatus.safe === undefined);
     assert.strictEqual(SAFE, '504x368+286+72');
+    /* The safe area 0.10.6 wrote: its Patch button is prompted, and writes SAFE. */
+    patch.safe = '476x306+306+72';
+    patch.announce('patched', 'high', null);
+    await until('0.10.6 safe area', () => c.statusText() === 'Status: Update needed');
+    c.enableMap();
+    await until('applied again', () => patch.count('apply') === 2 && !patch.busy);
+    assert.strictEqual(patch.safe, SAFE);
+    await until('current again', () => c.statusText() === 'Status: Patched');
+    c.close();
+});
+
+test('a patch with the cluster map URL without the arrival-time card prompts CarPlay\'s Patch button, which writes it', async (render, patch) => {
+    const c = control();
+    c.open();
+    await until('connected', () => c.connectedPatch() && c.connectedRender());
+    patch.res = SIZE;
+    patch.safe = SAFE;
+    patch.mapurl = 'no-eta';
+    patch.announce('patched', 'high', null);
+    await until('update map URL', () => c.statusText() === 'Status: Update needed' && c.canEnable());
+    c.enableMap();
+    await until('applied', () => patch.count('apply') === 1 && !patch.busy);
+    await until('current', () => c.statusText() === 'Status: Patched' && !c.canEnable());
+    /* A build without the edit, and one where it is stock, are current. */
+    for (const m of [null, 'off']) {
+        patch.mapurl = m;
+        patch.announce('patched', 'high', null);
+        await until('current with ' + m, () => c.patchStatus.mapurl === m && c.statusText() === 'Status: Patched' && !c.canEnable());
+    }
     c.close();
 });
 
@@ -573,7 +683,7 @@ test('installed, before the head-unit start: the marker shows the pending patch,
     c.close();
 });
 
-test('a pending apply from the daemon: its line, a restart, Patch and Remove patch greyed', async (render, patch) => {
+test('a pending apply from the daemon: its line, a restart, Patch greyed and Remove patch offered; a pending removal greys both', async (render, patch) => {
     const c = control();
     c.open();
     await until('connected', () => c.connectedPatch());
@@ -581,7 +691,7 @@ test('a pending apply from the daemon: its line, a restart, Patch and Remove pat
     patch.announce('unknown', 'high', 'patch written; takes effect at the next head-unit start', 'deferred');
     await until('pending', () => c.statusText() === 'Status: Patched after restart');
     assert.strictEqual(c.canEnable(), false);
-    assert.strictEqual(c.canDisable(), false);
+    assert.strictEqual(c.canDisable(), true);
     assert.strictEqual(c.restartNeeded(), true);
     patch.pending = 'revert';
     patch.announce('unknown', null, 'patch removed; the original carplay runs from the next head-unit start', 'deferred');
@@ -695,6 +805,10 @@ test('a patch boot recovery removed says so until its Patch button applies it ag
     patch.announce('patched', 'high', null);
     await until('aa removed', () => c.aaStatusText() === 'Status: Removed — head unit kept restarting');
     assert.strictEqual(c.canEnableAa(), true);
+    patch.aa = { state: 'original', density: 180, densities: [150, 400, 10], recovered: 1, recoveredWhy: 'crash' };
+    patch.announce('patched', 'high', null);
+    await until('aa removed after a crash', () => c.aaStatusText() === 'Status: Removed — Android Auto crashed');
+    assert.strictEqual(c.canEnableAa(), true);
     patch.aa = { state: 'patched', dpi: 180, density: 180, densities: [150, 400, 10] };
     patch.announce('patched', 'high', null);
     await until('aa patched', () => c.aaStatusText() === 'Status: Patched');
@@ -766,7 +880,7 @@ test('a refused restart reply clears the asked flag so the button returns', asyn
     c.close();
 });
 
-test('Android Auto: its line per state; Patch, Remove patch and zoom only where they apply', async (render, patch) => {
+test('Android Auto: its line per state; Patch, Remove patch and zoom only where they apply, also while a change waits for the restart', async (render, patch) => {
     const c = control();
     c.open();
     await until('connected', () => c.aa());
@@ -777,14 +891,18 @@ test('Android Auto: its line per state; Patch, Remove patch and zoom only where 
         [{ state: 'patched', dpi: 400, diskCard: 'shown', density: 400, densities: D }, 'Status: Patched', [false, true, true, false]],
         [{ state: 'unknown', density: 180, densities: D }, 'Status: Partly patched', [true, true, false, false]],
         [{ state: 'original', density: 180, conflict: 'not supported on this car (KI_KOMBI_VARIANT 9)' }, 'Status: Not supported on this car', [false, false, false, false]],
-        [{ state: 'original', density: 180, conflict: 'untested aapd build' }, 'Status: Untested version', [false, false, false, false]],
+        [{ state: 'original', density: 180, conflict: 'not patchable: gate: variant check not found' }, 'Status: Not supported on this car', [false, false, false, false]],
+        [{ state: 'original', density: 180, conflict: 'aapd.conf not usable: no number SCREENS/KOMBI_DISPLAY/DIMENSIONS/12.3/SA_WIDTHPIXELS' }, 'Status: Changed by another tool', [false, false, false, false]],
+        [{ state: 'original', density: 180, conflict: 'aapd.service starts /opt/other/aapd (/etc/systemd/system/aapd.service.d/x.conf)' }, 'Status: Changed by another tool', [false, false, false, false]],
         [{ state: 'absent', conflict: 'no Android Auto on this head unit' }, 'Status: Not supported on this car', [false, false, false, false]],
         [{ state: 'unknown', pending: 'apply', aapd: 'deferred', density: 180 }, 'Status: Patched after restart', [false, false, false, false]],
-        [{ state: 'unknown', pending: 'revert', aapd: 'deferred', density: 180 }, 'Status: Removed after restart', [false, false, false, false]],
+        [{ state: 'unknown', pending: 'apply', aapd: 'deferred', dpi: 170, diskCard: 'shown', density: 170, densities: D, runDpi: 180, runCard: 'shown', removable: true },
+            'Status: Patched after restart', [false, true, true, true]],
+        [{ state: 'unknown', pending: 'revert', aapd: 'deferred', density: 180 }, 'Status: Removed after restart', [true, false, false, false]],
         [{ state: 'busy', reason: 'applying', density: 180 }, 'Status: Patching…', [false, false, false, false]],
         [{ state: 'busy', reason: 'reverting', density: 180 }, 'Status: Removing patch…', [false, false, false, false]],
-        [{ state: 'error', reason: 'another change to / is running; try again', density: 180 }, 'Status: Failed', [true, true, false, false]],
-        [{ state: 'patched', dpi: 180, diskCard: 'shown', density: 170, densities: D, error: 'Command failed' }, 'Status: Failed', [false, true, true, true]],
+        [{ state: 'error', reason: 'another change to / is running; try again', density: 180 }, 'Status: Failed, another change to / is running; try again', [true, true, false, false]],
+        [{ state: 'patched', dpi: 180, diskCard: 'shown', density: 170, densities: D, error: 'Command failed' }, 'Status: Failed, Command failed', [false, true, true, true]],
         [{ state: 'original', density: 180, conflict: 'aapd was modified by something else' }, 'Status: Changed by another tool', [false, false, false, false]],
         [{ state: 'unknown', density: 180, conflict: 'aapd status unreadable: Error: Command failed: …' }, 'Status: Unavailable', [false, true, false, false]],
     ];
@@ -800,21 +918,108 @@ test('Android Auto: its line per state; Patch, Remove patch and zoom only where 
     await until('patched', () => c.canZoom(-10) && !c.aa().error);
     assert.strictEqual(c.zoomText(), 'Zoom: 180 dpi');
     assert.deepStrictEqual([c.cardText(), c.cardHidden()], ["Hide phone's turn card", false]);
+    /* Each change waits for the next head-unit start, and the next one is
+     * taken meanwhile: that start runs the last. */
     c.zoom(-10);
     await until('zoom sent', () => patch.count('aa-density') === 1);
-    await until('zoom done', () => c.aa().state === 'patched' && c.aa().dpi === 170);
+    await until('zoom waits', () => c.aa().pending === 'apply' && c.aa().dpi === 170 && c.aa().runDpi === 180);
+    assert.deepStrictEqual([c.aaStatusText(), c.zoomText(), c.canZoom(-10), c.canToggleCard(), c.canEnableAa(), c.canDisableAa()],
+        ['Status: Patched after restart', 'Zoom: 170 dpi (after restart)', true, true, false, true]);
     c.toggleCard();
     await until('card sent', () => patch.count('aa-card') === 1);
-    await until('card done', () => c.aa().state === 'patched' && c.aa().diskCard === 'hidden');
+    await until('card waits', () => c.aa().pending === 'apply' && c.aa().diskCard === 'hidden' && c.aa().runCard === 'shown');
     c.disableAa();
     await until('revert sent', () => patch.count('aa-revert') === 1);
-    await until('reverted', () => c.aa().state === 'original');
+    await until('removal waits', () => c.aa().pending === 'revert' && c.aa().runDpi === 180);
+    assert.deepStrictEqual([c.aaStatusText(), c.canEnableAa(), c.canDisableAa(), c.canZoom(-10), c.canToggleCard()],
+        ['Status: Removed after restart', true, false, false, false], 'Patch offered over a waiting removal; Zoom and the card without a planned patch');
     c.enableAa();
     await until('apply sent', () => patch.count('aa-apply') === 1);
+    await until('patch waits again', () => c.aa().pending === 'apply' && c.aa().dpi === 170 && c.aa().diskCard === 'hidden');
+    patch.aaStart();
+    await until('the head-unit start runs the last', () => c.aa().state === 'patched' && !c.aa().pending && c.aa().dpi === 170 &&
+        c.aa().diskCard === 'hidden');
     assert.deepStrictEqual(patch.received.filter((m) => /^aa-/.test(m.cmd)),
         [{ cmd: 'aa-density', value: 170 }, { cmd: 'aa-card', value: 'hidden' }, { cmd: 'aa-revert' }, { cmd: 'aa-apply' }]);
     c.close();
     assert.deepStrictEqual([c.zoomText(), c.cardText(), c.cardHidden()], ['Zoom: —', "Hide phone's turn card", false], 'no value while closed');
+});
+
+test('Remove patch while something of ours is on disk, pending too; greyed otherwise and while any change runs', async (render, patch) => {
+    const c = control();
+    c.open();
+    await until('connected', () => c.aa());
+    const cases = [
+        [{ state: 'unknown', pending: 'apply', carplay: 'deferred', removable: true }, true],
+        [{ state: 'unknown', pending: 'revert', carplay: 'deferred', removable: false }, false],
+        [{ state: 'patched', removable: true }, true],
+        [{ state: 'unknown', removable: true }, true],
+        [{ state: 'error', removable: true }, true],
+        [{ state: 'original', conflict: 'carplay was modified by something else', removable: true }, true],
+        [{ state: 'original', removable: false }, false],
+        [{ state: 'original', removable: undefined }, false],
+        [{ state: 'patched', removable: undefined }, true],
+        [{ state: 'unknown', pending: 'apply', carplay: 'deferred', removable: undefined }, false],
+    ];
+    for (const [s, can] of cases) {
+        patch.pending = s.pending || null;
+        patch.conflict = s.conflict || null;
+        patch.removable = s.removable;
+        patch.announce(s.state, 'high', null, s.carplay);
+        await until(JSON.stringify(s), () => c.patchStatus && c.patchStatus.state === s.state && c.patchStatus.removable === s.removable &&
+            (c.patchStatus.pending || null) === (s.pending || null));
+        assert.strictEqual(c.canDisable(), can, JSON.stringify(s));
+    }
+    const aaCases = [
+        [{ state: 'unknown', pending: 'apply', aapd: 'deferred', density: 180, removable: true }, true],
+        [{ state: 'unknown', pending: 'revert', aapd: 'deferred', density: 180, removable: false }, false],
+        [{ state: 'patched', dpi: 180, diskCard: 'shown', density: 180, removable: true }, true],
+        [{ state: 'original', density: 180, conflict: 'aapd was modified by something else', removable: true }, true],
+        [{ state: 'original', density: 180, removable: false }, false],
+        [{ state: 'busy', reason: 'applying', density: 180, removable: true }, false],
+    ];
+    patch.pending = null;
+    patch.removable = undefined;
+    for (const [aa, can] of aaCases) {
+        patch.aa = aa;
+        patch.announce('original', null, null);
+        await until(JSON.stringify(aa), () => JSON.stringify(c.aa()) === JSON.stringify(aa));
+        assert.strictEqual(c.canDisableAa(), can, JSON.stringify(aa));
+    }
+    patch.aa = { state: 'unknown', pending: 'apply', aapd: 'deferred', density: 180, removable: true };
+    patch.announce('original', null, null);
+    await until('pending', () => c.canDisableAa());
+    c.disableAa();
+    await until('revert sent', () => patch.count('aa-revert') === 1);
+    c.close();
+});
+
+test('Android Auto patched with a conflict patchd refuses changes for: Zoom and the turn card greyed, the conflict named, Remove patch offered', async (render, patch) => {
+    const c = control();
+    c.open();
+    await until('connected', () => c.aa());
+    const D = [150, 400, 10];
+    const patched = { state: 'patched', dpi: 180, diskCard: 'shown', density: 180, card: 'shown', densities: D, removable: true };
+    const cases = [
+        [null, true, 'Status: Patched', [false, true, true, true, true]],
+        ['aapd.service starts /opt/other/aapd (/etc/systemd/system/aapd.service.d/x.conf)', true, 'Status: Changed by another tool', [false, true, false, false, false]],
+        ['aapd is another build than our backup', false, 'Status: Changed by another tool', [false, false, false, false, false]],
+        ['not supported on this car (KI_KOMBI_VARIANT 9)', true, 'Status: Not supported on this car', [false, true, false, false, false]],
+        ['cluster coding unreadable', true, 'Status: Unavailable', [false, true, false, false, false]],
+    ];
+    for (const [conflict, removable, line, can] of cases) {
+        const aa = Object.assign({}, patched, { removable }, conflict ? { conflict } : {});
+        patch.aa = aa;
+        patch.announce('patched', 'high', null);
+        await until(`${conflict}`, () => JSON.stringify(c.aa()) === JSON.stringify(aa));
+        assert.strictEqual(c.aaStatusText(), line, `${conflict}`);
+        assert.deepStrictEqual([c.canEnableAa(), c.canDisableAa(), c.canZoom(-10), c.canZoom(10), c.canToggleCard()], can, `${conflict}`);
+    }
+    c.zoom(-10);
+    c.toggleCard();
+    await sleep(100);
+    assert.strictEqual(patch.received.filter((m) => /^aa-(density|card)$/.test(m.cmd)).length, 0, 'a greyed Zoom or turn card sends nothing');
+    c.close();
 });
 
 test('zoom and turn card: the value on disk, "(after restart)" only for the setting that waits, none without the patch', async (render, patch) => {
@@ -836,11 +1041,11 @@ test('zoom and turn card: the value on disk, "(after restart)" only for the sett
         runCard: 'shown', density: 180, card: 'hidden', densities: D }), ['Zoom: 180 dpi', "Hide phone's turn card (after restart)", true]);
     assert.deepStrictEqual(await show({ state: 'unknown', pending: 'apply', aapd: 'deferred', dpi: 180, diskCard: 'shown', runDpi: null,
         runCard: null, density: 180, card: 'shown', densities: D }), ['Zoom: 180 dpi (after restart)', "Hide phone's turn card (after restart)", false]);
-    assert.deepStrictEqual([c.canZoom(-10), c.canZoom(10), c.canToggleCard()], [false, false, false], 'greyed while waiting');
+    assert.deepStrictEqual([c.canZoom(-10), c.canZoom(10), c.canToggleCard()], [true, true, true], 'offered while a change waits');
     /* chosen 170, the apply failed: the disk's 180 and the failure */
     assert.deepStrictEqual(await show({ state: 'patched', dpi: 180, diskCard: 'shown', density: 170, card: 'shown', densities: D, error: 'x' }),
         ['Zoom: 180 dpi', "Hide phone's turn card", false]);
-    assert.strictEqual(c.aaStatusText(), 'Status: Failed');
+    assert.strictEqual(c.aaStatusText(), 'Status: Failed, x');
     c.close();
 });
 
@@ -958,7 +1163,7 @@ test('patchd 0.8.0: an Android Auto refusal and failure, the bare busy of its re
     assert.deepStrictEqual([c.statusText(), c.canRestart()], ['Status: Patched after restart', true]);
     /* an Android Auto change that failed, not a refusal */
     patch._broadcast(old({ aa: { state: 'error', reason: 'saving the choice failed: EROFS', density: 170, densities: D } }));
-    await until('Android Auto failed', () => c.aaStatusText() === 'Status: Failed');
+    await until('Android Auto failed', () => c.aaStatusText() === 'Status: Failed, saving the choice failed: EROFS');
     c.close();
 });
 

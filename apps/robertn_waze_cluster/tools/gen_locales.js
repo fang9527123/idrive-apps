@@ -26,12 +26,12 @@ const path = require('path');
 const HERE = path.join(__dirname, '..');
 const DIR = path.join(HERE, 'locales');
 const OUT = path.join(HERE, 'src', 'locales.js');
-const TREE = path.join(HERE, fs.readdirSync(HERE).find((n) => /^robertn_waze_cluster@\d+\.\d+\.\d+$/.test(n)));
+const TREE = path.join(HERE, JSON.parse(fs.readFileSync(path.join(HERE, 'mgu-app.json'), 'utf8')).tree);
 const TEXTS = path.join(TREE, 'rhmiData', 'variantGroups', 'Common', 'texts');
 
 /* The string ids of application.json and uiDescription.json, in English. */
 const RHMI_TEXTS = {
-    SID_WOC_TITLE: 'Waze on cluster',
+    SID_WOC_TITLE: 'Maps on cluster',
     SID_WOC_LOGS: 'Logs'
 };
 

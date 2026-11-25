@@ -17,13 +17,13 @@
     "Save logs": "Сохранить журналы",
     "Not supported on this car": "Не поддерживается в этом авто",
     "Unavailable": "Недоступно",
-    "Untested version": "Непроверенная версия",
     "Changed by another tool": "Изменено другим инструментом",
     "(after restart)": "(после перезапуска)",
     "Status: {0}": "Состояние: {0}",
     "Connecting…": "Подключение…",
     "Removed after restart": "Удалится после перезапуска",
     "Removed — head unit kept restarting": "Удалён — устройство постоянно перезапускалось",
+    "Removed — Android Auto crashed": "Удалён — сбой Android Auto",
     "Patched after restart": "Применится после перезапуска",
     "Removing patch…": "Удаление патча…",
     "Patching…": "Применение патча…",
@@ -36,7 +36,7 @@
     "Off": "Выкл.",
     "Starting…": "Запуск…",
     "Showing {0}": "Показ: {0}",
-    "Waze map": "карта Waze",
+    "map": "карта",
     "Error": "Ошибка",
     "Frozen": "Изображение зависло",
     "Waiting for the phone": "Ожидание телефона",
@@ -66,7 +66,7 @@
     "Not enough space": "Недостаточно места",
     "Too large to save": "Слишком большой размер",
     "Save failed": "Ошибка сохранения",
-    "Waze on cluster": "Waze на приборах",
+    "Maps on cluster": "Карты на приборах",
     "Show on": "Показывать на",
     "Cluster": "Приборы",
     "HUD (experimental)": "HUD (экспериментально)",
@@ -92,6 +92,8 @@
     "CarPlay Wi-Fi: {0}": "Wi-Fi CarPlay: {0}",
     "5 GHz": "5 ГГц",
     "2.4 GHz": "2,4 ГГц",
-    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "Звук может прерываться. На iPhone выключите и снова включите Wi-Fi."
+    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "Звук может прерываться. На iPhone выключите и снова включите Wi-Fi.",
+    "Own settings for this driver": "Свои настройки для этого водителя",
+    "Keep HUD map over BMW's pop-ups": "Оставлять карту на HUD поверх всплывающих окон BMW"
   }
 }

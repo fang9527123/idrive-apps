@@ -16,6 +16,7 @@
 #include "log.h"
 #include "ramses19/ramses.h"
 #include "ramses_console.h"
+#include "ramses_dlt.h"
 #include "unit.h"
 
 namespace crs {
@@ -94,6 +95,7 @@ int start(const cld::Config &cfg, char **)
     }
     log_info("ramses: connected as participant %u", user);
     Ramses19Gpu gpu(client);
+    gpu.set_realtime_offset_ms(cfg.num("scene_realtime_offset_ms"));
     if (!gpu.init(&err)) {
         log_error("ramses: %s", err.c_str());
         framework.disconnect();
@@ -105,11 +107,24 @@ int start(const cld::Config &cfg, char **)
     Service service(&gpu, &port, sc);
     port.set_manager(&service.slots());
     port.set_hmi_client_handle(std::strtoull(cfg.str("dcsm_hmi_client_handle").c_str(), nullptr, 0));
-    service.slots().console_text = [console](int64_t now_ms) { return console->counts_text(now_ms); };
+    service.slots().console_text = [console](int64_t now_ms) {
+        return console->counts_text(now_ms) + "; " + ramses_dlt_text();
+    };
+    service.slots().console_live_since = [console](int64_t now_ms) { return console->live_since(now_ms); };
+    service.slots().on_renderer_stuck = [&framework, user](int64_t) {
+        log_warn("ramses: reconnecting as participant %u", user);
+        framework.disconnect();
+        if (framework.connect() != ramses::StatusOK)
+            log_error("ramses: reconnect failed (participant %u)", user);
+    };
     Governor *gov = &service.compositor().governor();
-    port.on_link = [gov](bool silent, int64_t now_ms) {
-        if (silent)
-            gov->evidence(Evidence::LinkStall, now_ms);
+    SlotManager *slots = &service.slots();
+    port.on_link = [gov, slots](bool silent, int64_t now_ms) {
+        if (!silent)
+            return;
+        gov->evidence(Evidence::LinkStall, now_ms);
+        /* The KOMBI drops a silent client's content: nothing stays kept. */
+        slots->drop_kept("heartbeat replies stopped", now_ms);
     };
     Dcsm2Link::Options lo;
     lo.app_name = cfg.str("vsomeip_app");
@@ -123,10 +138,11 @@ int start(const cld::Config &cfg, char **)
         return 1;
     }
     for (const TargetSpec &t : sc.targets)
-        log_info("target %s: slot 0x%llx class %u scene 0x%llx %ux%u, linger %d ms%s%s%s", t.name.c_str(),
+        log_info("target %s: slot 0x%llx class %u scene 0x%llx %ux%u, linger %d ms%s%s%s%s", t.name.c_str(),
                  (unsigned long long)t.slot, t.content_class, (unsigned long long)t.scene_id, t.width, t.height,
                  t.linger_ms, t.take_over_stock ? ", takes over from the stock HMI" : "",
-                 t.follows.empty() ? "" : ", held while shown: ", t.follows.c_str());
+                 t.scene_files ? ", takes scene files" : "", t.follows.empty() ? "" : ", held while shown: ",
+                 t.follows.c_str());
 
     std::vector<pollfd> fds;
     for (;;) {

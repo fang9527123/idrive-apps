@@ -3,12 +3,11 @@
 /* MapFeeds: the decoded map on the cluster, on the HUD, on both or on
  * neither, as the two settings say.
  *
- * The cluster's feed (map_feed.h), on `map` (or `panel` from a shell), is
- * there while the cluster is on; off, nothing of it exists, so the KOMBI
- * shows its own content and no guide hold is asked for. The HUD's is made
- * while the HUD is on, unless the cluster's map is on `panel`, which shares
- * the HUD's scene id, so the two are never up at once. Off, nothing of it
- * exists: no connection, no layer, no thread, no copy. With neither,
+ * The cluster's feed (map_feed.h), on `map`, is there while the cluster is
+ * on; off, nothing of it exists, so the KOMBI shows its own content and no
+ * guide hold is asked for. The HUD's is made while the HUD is on, beside
+ * the cluster's. Off, nothing
+ * of it exists: no connection, no layer, no thread, no copy. With neither,
  * wants_frames() is false: the capture decodes without pictures.
  *
  * Each feed is its own connection to the cluster renderer and its own
@@ -28,8 +27,8 @@
  * A feed made while the other is there starts from its newest picture.
  *
  * The app's status is the cluster's (state off while it is off), with the
- * HUD's own state beside it (FeedStatus::hud_state): off, disabled by
- * cluster-render's mapping guard, or its feed's state. */
+ * HUD's own state beside it (FeedStatus::hud_state): off, disabled as
+ * cluster-render reports it, or its feed's state. */
 #ifndef WOC_MAP_FEEDS_H
 #define WOC_MAP_FEEDS_H
 
@@ -50,10 +49,6 @@ public:
      * HUD at hud_fps frames a second at most. */
     MapFeeds(const FeedConfig &base, bool cluster, bool hud, unsigned hud_fps);
 
-    /* Where the cluster's map goes ("map", "sail", "panel"); false (nothing
-     * changed) for a target the renderer has not got. The HUD's feed goes
-     * while the cluster's map is on panel. */
-    bool set_target(const std::string &name);
     /* The cluster and the HUD on or off, each at once. */
     void set_cluster(bool on);
     void set_hud(bool on);
@@ -64,6 +59,9 @@ public:
      * later; the status has the place as far as the HUD's feed puts it. */
     void set_hud_width(unsigned pct);
     void set_hud_offset(int dx, int dy);
+    /* The HUD map kept shown over the stock HMI's pop-ups or not, kept for a
+     * HUD feed made later. */
+    void set_hud_keep_shown(bool keep);
     int hud_offset_x() const { return base_.hud_offset_x; }
     int hud_offset_y() const { return base_.hud_offset_y; }
     /* The cluster map layer's guide_hold. */
@@ -72,16 +70,30 @@ public:
     /* For poll(): one entry per feed, appended. */
     size_t poll_fds(std::vector<pollfd> *fds) const;
     void poll(int64_t now_ms);
-    /* Until poll() has HUD work to do (-1: none). */
+    /* Until poll() has work for a feed that scales (the HUD's, or the
+     * cluster's while hosted): a scaled frame to take, or the next one due
+     * (-1: none). */
     int64_t wake_in_ms(int64_t now_ms) const;
 
     void offer(std::vector<uint8_t> *atlas, uint64_t id, int64_t now_ms);
     void repeat(uint64_t id, int64_t now_ms);
+    /* hosted_vpp_scale: the part the cluster's feed asks the decoder for
+     * (MapFeed::part), while the HUD is off (its feed scales the whole
+     * frame); and a frame that is a part, to the cluster's feed only. */
+    OutputPart part() const { return cluster_ && !hud_ ? cluster_->part() : OutputPart(); }
+    void offer_part(std::vector<uint8_t> *atlas, uint64_t id, const OutputPart &part, int64_t now_ms);
     void set_stream(bool live, bool frozen, Picture picture);
 
     FeedStatus status(const std::string &decode, const std::string &stream = std::string()) const;
     void request_report();
     std::string report() const;
+
+    /* The cluster's renderer holds its map layer to this many updates a
+     * second for another app (MapFeed::fps_cap); 0: not held, or no
+     * cluster feed. The HUD's pictures come from the same decode at
+     * hud_fps, which picture_rate keeps as a floor. */
+    unsigned fps_cap() const { return cluster_ ? cluster_->fps_cap() : 0; }
+    std::string fps_cap_app() const { return cluster_ ? cluster_->fps_cap_app() : std::string(); }
 
     /* The cluster's feed while there is one, else null. */
     MapFeed *cluster() { return cluster_.get(); }
@@ -89,7 +101,7 @@ public:
     MapFeed *hud_feed() { return hud_.get(); }
 
 private:
-    /* The HUD's feed made or dropped to match the setting and the target. */
+    /* Each feed made or dropped to match its setting. */
     void follow();
     /* The HUD's copy of the newest picture, when it is due. */
     void feed_hud(int64_t now_ms);

@@ -17,13 +17,13 @@
     "Save logs": "Enregistrer les journaux",
     "Not supported on this car": "Non pris en charge sur ce véhicule",
     "Unavailable": "Indisponible",
-    "Untested version": "Version non testée",
     "Changed by another tool": "Modifié par un autre outil",
     "(after restart)": "(après redémarrage)",
     "Status: {0}": "État : {0}",
     "Connecting…": "Connexion…",
     "Removed after restart": "Retiré après redémarrage",
     "Removed — head unit kept restarting": "Retiré — le système redémarrait sans cesse",
+    "Removed — Android Auto crashed": "Retiré — Android Auto s'est arrêté",
     "Patched after restart": "Appliqué après redémarrage",
     "Removing patch…": "Retrait du correctif…",
     "Patching…": "Application du correctif…",
@@ -36,7 +36,7 @@
     "Off": "Désactivée",
     "Starting…": "Démarrage…",
     "Showing {0}": "Affichage : {0}",
-    "Waze map": "Carte Waze",
+    "map": "carte",
     "Error": "Erreur",
     "Frozen": "Figée",
     "Waiting for the phone": "En attente du téléphone",
@@ -66,7 +66,7 @@
     "Not enough space": "Espace insuffisant",
     "Too large to save": "Trop volumineux pour être enregistré",
     "Save failed": "Échec de l'enregistrement",
-    "Waze on cluster": "Waze au combiné",
+    "Maps on cluster": "Cartes au combiné",
     "Show on": "Afficher sur",
     "Cluster": "Combiné",
     "HUD (experimental)": "HUD (expérimental)",
@@ -92,6 +92,8 @@
     "CarPlay Wi-Fi: {0}": "Wi-Fi CarPlay : {0}",
     "5 GHz": "5 GHz",
     "2.4 GHz": "2,4 GHz",
-    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "Le son peut se couper. Sur votre iPhone, désactivez puis réactivez le Wi-Fi."
+    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "Le son peut se couper. Sur votre iPhone, désactivez puis réactivez le Wi-Fi.",
+    "Own settings for this driver": "Réglages propres à ce conducteur",
+    "Keep HUD map over BMW's pop-ups": "Garder la carte sur le HUD devant les fenêtres contextuelles BMW"
   }
 }

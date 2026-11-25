@@ -13,8 +13,8 @@ namespace {
 
 const char *phase_name(int phase)
 {
-    static const char *const names[] = {"fetching", "mapping", "parked", "mapped", "refused", "lost"};
-    return phase >= 0 && phase < 6 ? names[phase] : "?";
+    static const char *const names[] = {"fetching", "mapping", "parked", "mapped", "refused", "lost", "kept"};
+    return phase >= 0 && phase < 7 ? names[phase] : "?";
 }
 
 std::string event_name(uint16_t event)
@@ -45,8 +45,9 @@ Refusal classify(bool ok, uint32_t status)
         return Refusal::Busy;
     case dcsm::E_DCSM_SLOTID_UNKNOWN:
         return Refusal::NoSlot;
-    case dcsm::E_DCSM_HANDLE_UNKNOWN:
     case dcsm::E_DCSM_CONTENTID_UNKNOWN:
+        return Refusal::UnknownContent;
+    case dcsm::E_DCSM_HANDLE_UNKNOWN:
     case dcsm::E_DCSM_CLIENT_ALREADYREGISTERED:
         return Refusal::Config;
     default:
@@ -93,6 +94,31 @@ void Dcsm2Port::request(const TargetSpec &t)
     wire_->fetch(t.scene_id);
 }
 
+void Dcsm2Port::load(const TargetSpec &t)
+{
+    request(t);
+    contents_[t.scene_id].load = true;
+}
+
+bool Dcsm2Port::unmap(const TargetSpec &t)
+{
+    auto it = contents_.find(t.scene_id);
+    if (!up_ || it == contents_.end() || !it->second.fetched ||
+        (it->second.phase != Phase::Mapping && it->second.phase != Phase::Mapped && it->second.phase != Phase::Parked))
+        return false;
+    Content &c = it->second;
+    if (c.map_asked) {
+        unmaps_.push_back(Unmap{t.scene_id, 0});
+        wire_->unmap(t.scene_id);
+    }
+    c.phase = Phase::Kept;
+    c.map_asked = false;
+    c.accepted_ms = -1;
+    log_info("dcsm: content 0x%llx: unmapped from slot 0x%llx, kept fetched", (unsigned long long)t.scene_id,
+             (unsigned long long)c.spec.slot);
+    return true;
+}
+
 void Dcsm2Port::release(const TargetSpec &t)
 {
     auto it = contents_.find(t.scene_id);
@@ -112,6 +138,39 @@ void Dcsm2Port::release(const TargetSpec &t)
         p.removals += it->second.fetched;
     }
     contents_.erase(it);
+}
+
+bool Dcsm2Port::keep(const TargetSpec &t)
+{
+    auto it = contents_.find(t.scene_id);
+    if (!up_ || it == contents_.end() || !it->second.fetched || it->second.phase == Phase::Fetching ||
+        it->second.phase == Phase::Mapping)
+        return false;
+    Content &c = it->second;
+    c.phase = Phase::Kept;
+    c.map_asked = false;   /* the lock unmapped it */
+    c.accepted_ms = -1;
+    log_info("dcsm: content 0x%llx: unmapped by a lock of slot 0x%llx, kept fetched", (unsigned long long)t.scene_id,
+             (unsigned long long)c.spec.slot);
+    return true;
+}
+
+bool Dcsm2Port::remap(const TargetSpec &t, int64_t now_ms)
+{
+    auto it = contents_.find(t.scene_id);
+    if (!up_ || it == contents_.end() || it->second.phase != Phase::Kept || !it->second.fetched)
+        return false;
+    Content &c = it->second;
+    c.phase = Phase::Mapping;
+    c.map_asked = true;
+    c.accepted_ms = -1;
+    c.map_again = true;
+    c.map_repeats = 0;
+    c.map_ms = now_ms;
+    asked_[t.scene_id] = total_;
+    maps_.push_back(t.scene_id);
+    wire_->map(t.scene_id, c.spec.content_class, c.spec.slot);
+    return true;
 }
 
 void Dcsm2Port::take_over(const TargetSpec &, uint64_t content)
@@ -206,12 +265,25 @@ void Dcsm2Port::on_reply(uint16_t method, bool ok, uint32_t status, const std::s
                            : method == dcsm::kReqMapContent ? take(&maps_) : 0;
     const std::string why = ok ? status_text : "no valid reply";
     log_info("dcsm: reply to request 0x%04x (content 0x%llx): %s", method, (unsigned long long)scene, why.c_str());
-    if (ok && status == dcsm::E_DCSM_OK)
-        return;   /* the status event follows */
     auto it = contents_.find(scene);
+    if (ok && status == dcsm::E_DCSM_OK) {
+        if (method == dcsm::kReqMapContent && it != contents_.end() && it->second.phase == Phase::Mapping &&
+            it->second.accepted_ms < 0)
+            it->second.accepted_ms = now_ms;
+        if (method == dcsm::kReqFetchContent && it != contents_.end() && it->second.phase == Phase::Fetching)
+            it->second.fetch_accepted = true;
+        return;   /* the status event follows */
+    }
     if (it == contents_.end())
         return;   /* released since */
     Content &c = it->second;
+    if (method == dcsm::kReqMapContent && c.phase == Phase::Mapping && c.accepted_ms >= 0) {
+        /* A repeat refused: the first map stands, as accepted. */
+        c.map_again = false;
+        log_info("dcsm: content 0x%llx: the repeated map is not taken (%s); waiting on the first one",
+                 (unsigned long long)scene, why.c_str());
+        return;
+    }
     if ((method == dcsm::kReqFetchContent && c.phase == Phase::Fetching) ||
         (method == dcsm::kReqMapContent && c.phase == Phase::Mapping))
         refuse(scene, c, classify(ok, status), (method == dcsm::kReqFetchContent ? "fetch " : "map ") + why, now_ms);
@@ -241,12 +313,27 @@ void Dcsm2Port::on_fetch_status(uint64_t scene, uint32_t status, int64_t now_ms)
         return;
     Content &c = it->second;
     switch (status) {
+    case dcsm::E_FETCH_STATUS_FETCHING:
+        if (c.phase == Phase::Fetching)
+            c.fetch_accepted = true;
+        break;
     case dcsm::E_FETCH_STATUS_FETCHED:
         if (c.phase != Phase::Fetching)
             break;
+        if (c.load) {
+            c.phase = Phase::Kept;
+            c.fetched = true;
+            log_info("dcsm: content 0x%llx: fetched, kept unmapped", (unsigned long long)scene);
+            if (manager_)
+                manager_->on_fetched(scene, now_ms);
+            break;
+        }
+        if (manager_)
+            manager_->on_fetched(scene, now_ms);
         c.phase = Phase::Mapping;
         c.map_asked = true;
         c.fetched = true;
+        c.map_ms = now_ms;
         if (up_)
             maps_.push_back(scene);
         wire_->map(scene, c.spec.content_class, c.spec.slot);
@@ -267,6 +354,8 @@ void Dcsm2Port::on_fetch_status(uint64_t scene, uint32_t status, int64_t now_ms)
                 manager_->on_lost(scene, "fetch removed", now_ms);
         } else if (c.phase == Phase::Fetching || c.phase == Phase::Mapping) {
             refuse(scene, c, Refusal::Transient, "fetch removed", now_ms);
+        } else if (c.phase == Phase::Kept && manager_) {
+            manager_->on_lost(scene, "fetch removed", now_ms);
         }
         break;
     default:
@@ -351,6 +440,32 @@ void Dcsm2Port::on_subscription(uint16_t event, uint16_t code, int64_t)
         log_info("dcsm: subscription to %s: accepted", event_name(event).c_str());
     else
         log_error("dcsm: subscription to %s: %s", event_name(event).c_str(), answer_text(code).c_str());
+}
+
+/* A display that is starting accepts a fetch and a map and then shows
+ * nothing, with no map status and no refusal (seen on the car: the map
+ * accepted, nothing for 5 s, and the same request made after a release
+ * shown within 0.3 s). The map is asked again while that lasts: no
+ * release, no unfetch, and the scene is not published again, so nothing
+ * is uploaded twice. Not while the last table reports the slot disabled. */
+bool Dcsm2Port::remind(const TargetSpec &t, int64_t now_ms)
+{
+    if (accepted_ms(t) < 0)
+        return false;
+    Content &c = contents_.find(t.scene_id)->second;
+    if (!up_ || !c.map_again || now_ms - c.map_ms < kMapAgainMs)
+        return true;
+    for (const SlotInfo &s : table_)
+        if (s.slot == c.spec.slot && s.status == 0)
+            return true;
+    c.map_ms = now_ms;
+    if (c.map_repeats++ == 0)
+        log_info("dcsm: content 0x%llx (target %s, slot 0x%llx): the map was accepted and nothing is shown; asking "
+                 "again every %lld ms",
+                 (unsigned long long)t.scene_id, t.name.c_str(), (unsigned long long)c.spec.slot, (long long)kMapAgainMs);
+    maps_.push_back(t.scene_id);
+    wire_->map(t.scene_id, c.spec.content_class, c.spec.slot);
+    return true;
 }
 
 /* What arrived since the request, and the last slot table, so a log tells

@@ -17,13 +17,13 @@
     "Save logs": "حفظ السجلات",
     "Not supported on this car": "غير مدعوم في هذه السيارة",
     "Unavailable": "غير متاح",
-    "Untested version": "إصدار غير مُختبَر",
     "Changed by another tool": "عدّلته أداة أخرى",
     "(after restart)": "(بعد إعادة التشغيل)",
     "Status: {0}": "الحالة: {0}",
     "Connecting…": "جارٍ الاتصال…",
     "Removed after restart": "يُزال بعد إعادة التشغيل",
     "Removed — head unit kept restarting": "أُزيل — ظلت الوحدة الرئيسية تعيد التشغيل",
+    "Removed — Android Auto crashed": "أُزيل — تعطّل Android Auto",
     "Patched after restart": "يُطبَّق بعد إعادة التشغيل",
     "Removing patch…": "جارٍ إزالة التصحيح…",
     "Patching…": "جارٍ تطبيق التصحيح…",
@@ -36,7 +36,7 @@
     "Off": "إيقاف",
     "Starting…": "جارٍ البدء…",
     "Showing {0}": "عرض {0}",
-    "Waze map": "خريطة Waze",
+    "map": "الخريطة",
     "Error": "خطأ",
     "Frozen": "متجمدة",
     "Waiting for the phone": "بانتظار الهاتف",
@@ -66,7 +66,7 @@
     "Not enough space": "المساحة غير كافية",
     "Too large to save": "أكبر من أن يُحفظ",
     "Save failed": "فشل الحفظ",
-    "Waze on cluster": "Waze على لوحة العدادات",
+    "Maps on cluster": "الخرائط على لوحة العدادات",
     "Show on": "عرض على",
     "Cluster": "لوحة العدادات",
     "HUD (experimental)": "HUD (تجريبي)",
@@ -92,6 +92,8 @@
     "CarPlay Wi-Fi: {0}": "Wi-Fi لـ CarPlay: {0}",
     "5 GHz": "5 GHz",
     "2.4 GHz": "2.4 GHz",
-    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "قد ينقطع الصوت. على iPhone، أوقف Wi-Fi ثم شغّله."
+    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "قد ينقطع الصوت. على iPhone، أوقف Wi-Fi ثم شغّله.",
+    "Own settings for this driver": "إعدادات خاصة لهذا السائق",
+    "Keep HUD map over BMW's pop-ups": "إبقاء خريطة HUD فوق النوافذ المنبثقة من BMW"
   }
 }

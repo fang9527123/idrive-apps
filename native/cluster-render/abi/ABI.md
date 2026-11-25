@@ -11,10 +11,10 @@ headers declare version 19.0.14's API as the unit's library exports it
 Labels:
 
 - **VERIFIED**: seen in the binary (symbol, disassembly at the given address)
-  or observed by running the real library (the smoke test below, whose
-  program is not part of this repository, and `make test-ramses`).
+  or observed by running the real library ("smoke": a test program built on
+  these headers and run on a copy of the unit's root filesystem, not part of
+  this repository; and `make test-ramses`).
 - **INFERRED**: reasoning from verified facts.
-- **CAR-ONLY**: needs the vehicle.
 
 Addresses are the library's VAs. "The HMI" is the unit's HmiMain3D, a
 client of the same library.
@@ -32,34 +32,11 @@ $(BUILD)/stub/$(RAMSES19_SONAME): abi/libramses19.symbols
 ```
 
 - `#include "ramses19/ramses.h"`, namespace `ramses`.
-- **Toolchain:** the service builds with gcc 7.5 and libstdc++ (`../Makefile`, `../docker/Dockerfile`), because libvsomeip3 needs them (`../dcsm/DCSM.md`). The smoke test builds with `zig c++` and static libc++, which is also viable for the RAMSES part alone:
-  - VERIFIED: the smoke binary runs in one process with the unit's libstdc++, which libramses pulls in.
-  - INFERRED: this is safe because no `std::` type crosses the boundary. No API in the reconstructed set takes a `std::` type; the export that does (`ramses::RamsesFramework::setSomeIPICServerAndClientManager`) is not declared.
-  - Zig 0.16 rejects `-Wl,--dynamic-linker`, so a zig build links without it and rewrites PT_INTERP with `ramses_abi.py set-interp`.
+- **Toolchain:** gcc 7.5 and libstdc++ (`../Makefile`, `../docker/Dockerfile`), because libvsomeip3 needs them (`../dcsm/DCSM.md`). No API in the reconstructed set takes a `std::` type.
 - **`check-imports`** fails the build if any `ramses` import is missing from the unit's export list.
 - **Object classes:**
   - Library-owned objects (Scene, Node, …) are declared with deleted constructors and destructors. Release them with `Scene::destroy` or `RamsesClient::destroy`.
   - Value objects (configs, `EffectDescription`, `UniformInput`, …) are constructed by the library's own constructor into 64 bytes of storage.
-
-## Smoke test
-
-How it runs:
-- It builds the stub, compiles a test program against the headers, rewrites the interpreter and checks the imports (every ramses import exported).
-- It then runs in Docker (linux/amd64) under a copy of the unit's root filesystem: its own `ld-linux`, glibc 2.27, libstdc++, libramses and their dependencies (dlt, vsomeip, CommonAPI, distributedrendering, EGL/GLES, FreeType, HarfBuzz). Nothing else is needed: the library loads with only `--library-path /rootfs/lib:/rootfs/usr/lib`. `make test-ramses` runs the service's compositor the same way.
-
-What it builds: a local-only scene with:
-- an orthographic and a perspective camera;
-- a render pass and render groups;
-- a GLSL ES 3.0 effect with 7 uniforms and 2 attributes;
-- an appearance with every setter we use;
-- an indexed mesh;
-- a Texture2D, plus RGBA8 and R8 Texture2DBuffers (full and sub-rect `setData`);
-- data objects;
-- a client-side animation.
-
-It flushes, publishes, unpublishes and destroys everything. Where the library can hand a value back, the test compares it with what was set.
-
-Last run: **0 failures** with `--renderer`, and 0 failures with `--someip 801`.
 
 ## Evidence per item
 
@@ -72,8 +49,22 @@ Last run: **0 failures** with `--renderer`, and 0 failures with `--someip 801`.
 | `RamsesFramework` 8 bytes, `RamsesClient` 0x20, `RamsesRenderer` 0x18 | the HMI's `operator new(8)`, `(0x20)` and `(0x18)` before the constructors; lib constructors write `[this]` / up to `[this+0x18]` / `[this+0x10]` | VERIFIED |
 | `UniformInput`, `AttributeInput`, `EffectDescription` export no destructor | `.dynsym`; the HMI destroys an AttributeInput by calling `EffectInput::~EffectInput` (D2) directly. The headers' inline destructors do the same, and `StatusObjectD2` (0x95f70) releases the impl | VERIFIED |
 | `resourceCacheFlag_t` passed by hidden reference | `RamsesClient::createEffect` 0x1cd0a1 `mov eax,[rdx]`; the HMI passes `lea rdx,[rbp-0x90]`. Header gives the class a user-provided copy constructor so clang does the same | VERIFIED |
-| Value enums (`ETextureFormat`, `ETextureAddressMode`, `ETextureSamplingMethod`, `EBlendFactor`, `EBlendOperation`, `ECullMode`, `EDepthFunc`, `EDepthWrite`, `EDrawMode`, `EStencilFunc`, `EStencilOperation`, `EInputType`, `ETextureCubeFace`) | by calling the exported `ramses::get*String(E)` functions for every value (bounded tables, e.g. `getTextureFormatString` 0x224880) | VERIFIED |
+| Value enums (`ETextureFormat`, `ETextureAddressMode`, `ETextureSamplingMethod`, `EDepthWrite`, `EInputType`, `ETextureCubeFace`) | by calling the exported `ramses::get*String(E)` functions for every value (bounded tables, e.g. `getTextureFormatString` 0x224880). A name table alone can mislead (`EDrawMode`, below), so the render-state enums are traced to the GL call instead | VERIFIED |
+| Render-state enums, how they were traced | each `Appearance::set*` converts by an int32 table that is the identity on the declared range; the renderer copies the scene's render state into its cache unconverted (0x37d14a–0x37d212); 0x37a8e0 passes it to `Device_GL` (vtable 0x9ca0f8), whose methods convert by tables at 0x6cf8xx and jump to the GL function. The transport between client and renderer is not traced byte by byte. `make test-ramses` sets every value on a part and reads back the library's own integers with the getters (`read_look_raw`, not through the backend's tables), each compared with the number traced in the rows below, blending off as Disabled 0 for both operations; a backend table out of the library's order fails it | VERIFIED |
+| `EBlendFactor`: Zero 0, One 1, SrcAlpha 2, OneMinusSrcAlpha 3, DstAlpha 4, OneMinusDstAlpha 5 | `setBlendingFactors` 0x19b680 → 0xa8ff0, table 0x69a6b0 = 0–5; `Device_GL` 0x59cfd0, table 0x6cf8c0 = GL_ZERO, GL_ONE, 0x302–0x305 (SRC_ALPHA, ONE_MINUS_SRC_ALPHA, DST_ALPHA, ONE_MINUS_DST_ALPHA) → `glBlendFuncSeparate` (0x59d01a) | VERIFIED |
+| `EBlendOperation`: Disabled 0, Add 1, Subtract 2, ReverseSubtract 3, Min 4, Max 5 | `setBlendingOperations` 0x19c450 → 0xa9090 (refuses one of the two Disabled alone), table 0x69a6f0 = 1–5; `Device_GL` 0x59d980: 0 → `glDisable(GL_BLEND)`, else table 0x6cf8a0 = FUNC_ADD, FUNC_SUBTRACT, FUNC_REVERSE_SUBTRACT, MIN, MAX → `glBlendEquationSeparate` (0x59d9b6) | VERIFIED |
+| `ECullMode`: Disabled 0, FrontFacing 1, BackFacing 2, FrontAndBackFacing 3 | `setCullingMode` 0x1a0080 → 0xa9290, table 0x69a680 = 0–3; `Device_GL` 0x59d9d0: 0 → `glDisable(GL_CULL_FACE)`, else table 0x6cf838 = FRONT, BACK, FRONT_AND_BACK → `glCullFace` (0x59d9eb) | VERIFIED |
+| `EDepthFunc`: Disabled 0, Greater 1, GreaterEqual 2, Less 3, LessEqual 4, Equal 5, NotEqual 6, Always 7, Never 8 | `setDepthFunction` 0x19dbe0 → 0xa9120, table 0x69a640 = 0–8; `Device_GL` 0x59d950: 0 → `glDisable(GL_DEPTH_TEST)`, else table 0x6cf8e0 = GREATER, GEQUAL, LESS, LEQUAL, EQUAL, NOTEQUAL, ALWAYS, NEVER → `glDepthFunc` (0x59d96b) | VERIFIED |
+| `EStencilFunc`: Disabled 0, Never 1, Always 2, Equal 3, NotEqual 4, Less 5, LessEqual 6, Greater 7, GreaterEqual 8 | `setStencilFunction` 0x19e640 → 0xa91b0, table 0x69a5e0 = 1–8; `Device_GL` 0x59da00: 0 → `glDisable(GL_STENCIL_TEST)`, 1 → NEVER, 2–8 by table 0x6cf880 = ALWAYS, EQUAL, NOTEQUAL, LESS, LEQUAL, GREATER, GEQUAL → `glStencilFunc` (0x59da2c), ref and mask unchanged | VERIFIED |
+| `EStencilOperation`: Keep 0, Zero 1, Replace 2, Increment 3, IncrementWrap 4, Decrement 5, DecrementWrap 6, Invert 7 | `setStencilOperation` 0x19f300 → 0xa9210, table 0x69a5a0 = 1–7 (0 kept); `Device_GL` 0x59d020, table 0x6cf860 = KEEP, ZERO, REPLACE, INCR, INCR_WRAP, DECR, DECR_WRAP, INVERT → `glStencilOp` (0x59d04d) | VERIFIED |
+| `EDrawMode`: Points 0, Lines 1, Triangles 2, TriangleStrip 3, LineLoop 4 (RAMSES 27's order) | `Appearance::setDrawMode`'s table 0x69a560 maps them to the internal Points 0, Lines 1, LineLoop 2, Triangles 3, TriangleStrip 4; `make test-ramses` reads a new appearance's mode back as 2 (`getDrawMode`), and every mode as set; on a stand-in renderer on the unit's library 2 draws triangles and 3 a strip. `getDrawModeString` (0x1a4740) indexes the internal names with the public value, so its order is not the enum's | VERIFIED |
+| `ERenderBufferType` Color 0, Depth 1, DepthStencil 2; `ERenderBufferFormat` R8 0, RG8 1, RGB8 2, RGBA8 3, R16F-RGBA32F 4-11, Depth24 12, Depth24_Stencil8 13 (no RGBA4); `ERenderBufferAccessMode` WriteOnly 0, ReadWrite 1 | `Scene::createRenderBuffer`'s checks (0x111e57: type 0 takes formats 0-11, 1 takes 12, 2 takes 13) and `RenderBufferImpl`'s tables (0x69edb8 type, 0x69ed80 format, the access mode by compare) | VERIFIED |
 | Texture formats: `ETextureFormat_RGBA8` = 5, `ETextureFormat_R8` = 1 (also RG8 2, RGB8 3, …, ASTC 22–49) | as above; smoke creates RGBA8 Texture2D and RGBA8/R8 Texture2DBuffers | VERIFIED |
+| `ERenderBufferType`: Color 0, Depth 1, DepthStencil 2 | `SceneImpl::createRenderBuffer` 0x111e10, at 0x111e57: type 0 takes formats 0–11 (0x112030 `cmp r8d,0xb; setbe`), type 1 only 12 (0x112040), type 2 only 13 (0x111e6b); `RenderBufferImpl` (0xf0aa6) maps 0, 1, 2 to the internal 3, 1, 2 by the table 0x69edb8, and `getBufferType` (0x1d6d60 → 0xf0b90) maps them back (1 → 1, 2 → 2, else 0) | VERIFIED |
+| `ERenderBufferFormat`: R8 0, RG8 1, RGB8 2, RGBA8 3, R16F 4, R32F 5, RG16F 6, RG32F 7, RGB16F 8, RGB32F 9, RGBA16F 10, RGBA32F 11, Depth24 12, Depth24_Stencil8 13; no RGBA4 | `RenderBufferImpl` (0xf0ab9) maps 0–13 to the internal formats 1, 3, 6, 9, 22–29, 20, 21 (R8, RG8, RGB8, RGBA8, the float ones, Depth24, Depth24_Stencil8) by the table 0x69ed80; `getBufferFormat` (0x1d6d70 → 0xf0bc0) maps them back by 0x69ed00, indexed by the internal format less 1 (1, 3, 6, 9, 22–29, 20, 21 back to 0–13; any other reads as 3); on a stand-in renderer on the unit's library, a canvas (RGBA8) cleared transparent and drawn at alpha 0.5 is sampled back as alpha 128, so its format keeps alpha | VERIFIED |
+| `ERenderBufferAccessMode`: WriteOnly 0, ReadWrite 1 | `SceneImpl::createRenderBuffer` 0x111e76: mode 0 is made at once, mode 1 only with a sample count of 0 (one a sampler reads); `getAccessMode` (0xf0c00): internal 1 → 0, else 1; RAMSES 27's header has the same order | VERIFIED |
+| `RamsesClient::createTextureCube(size, format, mipCount, const CubeMipLevelData*, generateMipChain, cacheFlag, name)`, `TextureCube::getSize`/`getTextureFormat`, `createTextureSampler(..., const TextureCube&, anisotropy, name)` | link against the stub + `check-imports`; `make test-ramses` makes RGBA8 and ETC2RGBA cube textures, samples them, and reads a cube's size and format back | VERIFIED |
+| `CubeMipLevelData`: `uint32_t m_faceDataSize`, then the face pointers +X, -X, +Y, -Y, +Z, -Z | `make test-ramses` fills each face with its own byte and saves the texture with `RamsesClient::saveResources` (declared for this): the six faces are in the file in that order, and with +X and -X given in each other's place the check fails; on a stand-in renderer on the unit's library a cube map of six coloured faces sampled by direction shows +Z towards +z, +Y up and -X to the left | VERIFIED |
 | `EScenePublicationMode`: LocalAndRemote 0, LocalOnly 1 | `SceneImpl::publish` 0x111a98: 1 → internal 2 ("EScenePublicationMode_LocalOnly"), 0 → internal 1 (LocalAndRemote) | VERIFIED |
 | `ESceneFlushMode`: Synchronous 1; Asynchronous 0 is rejected | `SceneImpl::flush` 0x111139 `cmp esi,1` else "Scene::flush: Unknown flushMode"; log table 0x505669; smoke: 0 → status 3 | VERIFIED |
 | `EClearFlags` Color 1, Depth 2, Stencil 4 | renderer 0x59cee0: bit0 → `GL_COLOR_BUFFER_BIT`, bit1 → `GL_DEPTH_BUFFER_BIT`, bit2 → `GL_STENCIL_BUFFER_BIT`; `setClearFlags` passes the value through (0xf4d70); default 7 | VERIFIED |
@@ -81,13 +72,24 @@ Last run: **0 failures** with `--renderer`, and 0 failures with `--someip 801`.
 | `EEffectAttributeSemantic` TextPositions 1, TextTextureCoordinates 2 | upstream; not exercised | INFERRED |
 | `EAnimatedProperty` Translation 0, Rotation 1, Scaling 2; `EAnimatedPropertyComponent` X 0 … Z 2, All 4 | table 0x699df8 = (0,1,2); smoke: Translation/All animates (5,10,15) at 500 ms of 0→(10,20,30), Rotation/Z gives (0,0,45) of 0→90 | VERIFIED (Y 1, W 3 INFERRED) |
 | `EAnimationSystemFlags_ClientSideProcessing` = 1 | `createRealTimeAnimationSystem` impl 0x110552 `and esi,1`; smoke reads animated values on the client | VERIFIED |
+| `AnimationSystem::findObjectByName` (its own animation objects), `AnimationSequence::getAnimationSequenceStopTime` (`uint32_t`, sequence time), `getPlaybackSpeed` | exported (`check-imports`), upstream signatures (RAMSES 27's headers declare the same); `make test-ramses` starts and skips a sequence of each kind of animation system (`AnimationSystem::setTime` driving the one without a clock of its own) in a scene file it saved, and reads the animated values back | VERIFIED |
+| `AnimationSequence::startAt` takes a start only while the sequence's stop is after its system's time | `make test-ramses`, and a stand-alone check of both kinds of system on the unit's library: a start whose stop equals or precedes the system's time applies nothing, and a playing sequence keeps the value it had (0 or 3 of a 0→10 sweep, never 10); a stop 1 ms ahead gives 9.99, then 10 at the stop | VERIFIED |
 | `ELoopMode` 0 / 1 | `setLoopMode` impl 0x250749: 0 and 1 handled, others "loop mode value not handled". Names UpdateAndRender / UpdateOnly from upstream | values VERIFIED, names INFERRED |
 | `status_t` 0 = OK; `getStatusMessage` on `RamsesClient` / `RamsesRenderer` | smoke: `getStatusMessage(0)` = "OK", flush error 3 = "Scene::flush: Unknown flushMode" | VERIFIED |
 | Return types | `status_t` returns checked by running (status 0 every time) for every call the smoke test makes. Void in 19: `RenderPass::getClearColor` (0x1e32a0), `RamsesFrameworkConfig::setDLTApplicationID`/`setDLTApplicationDescription`/`setPeriodicLogsEnabled` (impls 0x88b40/0x88e40/0x89160 return without setting eax) | VERIFIED for exercised calls; the rest of the declared getters/setters follow upstream 25 return types, INFERRED |
 | `MipLevelData {uint32 size; const uint8* data}` | upstream layout; smoke creates a 4×4 RGBA8 Texture2D from it and reads back size/format | INFERRED (runtime-consistent) |
 | `createTexture2DBuffer(mipLevelCount, width, height, format)` | smoke: `(1, 64, 32, RGBA8)` reports 64×32, 1 level | VERIFIED |
+| `Scene::createVertexDataBuffer(maxBytes, EDataType)`, `createIndexDataBuffer`, `VertexDataBuffer::setData(data, bytes, offset)`, `IndexDataBuffer::setData`, `GeometryBinding::setInputBuffer(input, const VertexDataBuffer&, divisor)`, `setIndices(const IndexDataBuffer&)` (text layers' glyph runs) | `make test-ramses`: a run of 256 glyphs made, a 64-glyph line written into it and flushed, rewritten 20 times, a flush each; the scene described whole; nothing logged as an error | VERIFIED |
+| `EDataType`: `UInt16` 0, `UInt32` 1, `Float` 2, `Vector2F` 3, `Vector3F` 4, `Vector4F` 5 | `make test-ramses`: a `float`, `vec2`, `vec3` and `vec4` attribute each take a vertex buffer of its declared type, and the library refuses every other pairing ("vertex data buffer type does not match input data type", checked once by hand: 12 refused, 4 taken) | VERIFIED |
 | `Texture2DBuffer::setData(data, mip, x, y, w, h)` | smoke: full and sub-rect succeed, out-of-bounds fails with "updated subregion exceeds the size of the target mipLevel" | VERIFIED |
 | Renderer objects | smoke `--renderer`: `RendererConfig`, `DisplayConfig` (IVI surface/layer round trip, window rectangle), `RamsesRenderer` construction | VERIFIED (no display created) |
+| Scene files: `ResourceFileDescription(const char*)` with `add(const Resource*)`, `ResourceFileDescriptionSet` with `add`, `RamsesClient::saveSceneToFile(scene, file, set, compress)`, `loadSceneFromFile(file, set)` | `make test-ramses`: a scene of nodes, meshes, a camera, two passes and a data object saved with its effect and arrays in a resource file, loaded back with its scene id, published; the descriptions kept until the scene is destroyed. One impl pointer each (upstream), within the 64 bytes reserved | VERIFIED |
+| `loadSceneFromFile` makes client resource objects | `make test-ramses`: one more resource (`ResourceIterator`) after loading that file, one fewer after destroying it and the scene; loading it again makes no more | VERIFIED |
+| `SceneObjectIterator(scene, type)`, `ResourceIterator(client, type)`, `RamsesObject::getType`, `isOfType` (a type or a base), `Scene::findObjectByName`, `RamsesClient::findObjectByName` (finds a scene by name) | `make test-ramses`: every object of the loaded scene by kind, the loaded scene and its objects found by name | VERIFIED |
+| `ERamsesObjectType`, `EEffectInputDataType` | values not reconstructed (32-bit enums, as the library's); learned at run time (`src/graph_ramses19.cpp`): a probe effect's 11 uniforms and a `sampler2D` and a `samplerCube` through `UniformInput::getDataType`, probe objects' `getType`, the bases Node and Resource by `isOfType`. `make test-ramses`: 12 distinct uniform types, the two samplers one type; 5 distinct data object types; node 9, mesh 15, perspective 19, orthographic 20, render pass 71, resource 54 | VERIFIED |
+| An effect's uniforms as compiled: `Effect::getUniformInputCount`, `getUniformInput(index, UniformInput&)`, `EffectInput::getName`, `UniformInput::getDataType` | link against the stub + `check-imports`; `make test-ramses` reads an effect's uniforms declared in a list, behind a define, in the `#if` branch taken and after a comment: each reported, by name. Both kinds of sampler report one data type, and `Appearance::setInputTexture` takes a cube texture on a `sampler2D` and a 2D one on a `samplerCube` (RAMSES 27 reports `TextureSampler2D`/`TextureSamplerCube` and refuses both): the backend takes a sampler's kind from its declarations where they agree, and leaves it unknown otherwise (`src/graph_ramses19.cpp` `declared_samplers`) | VERIFIED |
+| `Scene::createDataInt32`, `createDataVector3f`, `DataInt32`, `DataVector3f` | probe objects made; their `setValue` | VERIFIED made; `setValue` INFERRED (upstream signatures, exported) |
+| `Appearance::setInputValueInt32`/`Vector2i`/`Vector3i`/`Vector4i`/`Matrix22f`/`Matrix33f(input, count, values)` | exported (`check-imports`), upstream signatures; `make test-ramses` exercises the vec4 and float setters only | INFERRED |
 
 ## ERamsesCommunicationUser
 
@@ -151,11 +153,9 @@ The MGU's TCP ports for these instances (`vsomeip_gen.json`, VERIFIED):
 
 **RamsesService 0xB0BE is not used by this library:** no reference to it in `.rodata` or the import list (VERIFIED absence).
 
-- So assigning participants to ports through RamsesService instances is wrong for 19.0.14 (it gives "32504 SUA" and "32505 VideoAR").
-- From the table:
-  - SUA is instance 7, on port 32513.
-  - Ports 32504/32505 carry user 801's SceneProvider 4, ParticipantInfo 5 and ResourceProvider 5.
-  - They also carry NAVI_JV's ResourceProvider 4 and HU_HMI's ResourceConsumer 4.
+- From the table: SUA is instance 7, on port 32513; ports 32504/32505
+  carry user 801's SceneProvider 4, ParticipantInfo 5 and ResourceProvider
+  5, NAVI_JV's ResourceProvider 4 and HU_HMI's ResourceConsumer 4.
 
 ### Who uses which user on the unit
 
@@ -171,36 +171,20 @@ All callers of `enableSomeIPCommunication` in the unit's firmware (VERIFIED):
 
 INFERRED: GeniviAdapter and nv_md use the navi users. No binary passes 801.
 
-### Recommendation for our producer: `enableSomeIPCommunication(801)`
+### The service's user: 801
 
-- **VERIFIED: HU stack.** In an emulator of the unit, user 1 fails in the MGU lib with "compiled without useSomeIP_IC" and then crashes, so IC-stack users (1, 101–110, 401–404, 802, 803, 901) are out.
-- **VERIFIED: the real lib accepts 801:** "Starting Ramses Client Application: …_MGUTestUserConnectingToAll", "Use SomeIPConnectionSystemHU", in the smoke run with `--someip 801`, no connect.
-- **VERIFIED: its own instances are unique.** SR3, SP4, RC5, RP5 and PI5 belong to no other participant, so they do not collide with HU_HMI (HmiMain3D), SUA or the navi users.
-- **VERIFIED: every one of its instances is in `vsomeip_gen.json`:**
-  - SR3 → 32502
-  - SP4 → 32504
-  - RC5 → 32502
-  - RP5 → 32505
-  - PI5 → 32504
-- **VERIFIED: it proxies the KOMBI's IC_HMI instance 1** for SceneRenderer, ResourceConsumer and ParticipantInfo.
-- **IC_HMI's proxy lists in this table include SP4, RP5 and PI5,** and 803 exists only to talk to 801. VERIFIED for the table; whether the KOMBI's own build has the same table is CAR-ONLY.
-- **Rejected alternatives:**
-  - 902 and 201–210 use instances 11–20, which are not provisioned, and do not proxy 1.
-  - 5 (SUA) is a live HMI role.
-  - 3 and 4 belong to navigation.
-- **INFERRED side effect:** HU_HMI proxies SR3, SP4, RC5, RP5 and PI5, so HmiMain3D will also connect to an 801 participant on the MGU and see its scenes as available. Use scene IDs that HmiMain3D does not use. Whether it subscribes to scenes it does not know is CAR-ONLY.
-- **vsomeip security, VERIFIED:**
-  - Offering and requesting 0xB05A–0xB05E is allowed for uid 5000 (`hmi_5000`) in both of the unit's policy files, `/etc/vsomeip/10017_902/vsomeip_security.json` and `/etc/vsomeip/5000_5000/vsomeip_security.json`.
-  - Root is allowed only in the 10017_902 one, through `deny {}` for uid 0 / gid 0.
-  - The navi uids 6053/6055/6058/6100 may offer only in the 10017_902 one.
-  - INFERRED: run as uid/gid 5000 to pass whichever file is live. Which file is live is CAR-ONLY.
-
-**What the KOMBI needs to accept it (CAR-ONLY):**
-
-1. Its IC_HMI renderer proxies SceneProvider 4, ResourceProvider 5 and ParticipantInfo 5. True in the 19.0.14 table; the KOMBI's RAMSES build is unknown.
-2. Its vsomeip config and SD find and request those service instances on the MGU.
-3. DCSM grants our scene a slot.
-4. Its admission check passes: GUID and protocol version. The MGU library has no scene allow-list.
+- 801 is on the HU stack; IC-stack users (1, 101–110, 401–404, 802, 803,
+  901) fail in the MGU library ("compiled without useSomeIP_IC").
+- Its own instances (SR3, SP4, RC5, RP5, PI5) belong to no other
+  participant and are all in `vsomeip_gen.json` (ports above), and it
+  proxies the KOMBI's IC_HMI instance 1 for SceneRenderer, ResourceConsumer
+  and ParticipantInfo. IC_HMI's proxy lists include SP4, RP5 and PI5.
+- HU_HMI proxies 801's instances too, so HmiMain3D sees its scenes as
+  available: use scene ids HmiMain3D does not use.
+- vsomeip security: offering and requesting 0xB05A–0xB05E is allowed for
+  uid 5000 (`hmi_5000`) in both of the unit's policy files
+  (`/etc/vsomeip/10017_902/` and `/etc/vsomeip/5000_5000/vsomeip_security.json`),
+  so the service runs as uid/gid 5000.
 
 ## Differences from upstream 25
 
@@ -214,7 +198,7 @@ Upstream 25.0.0 is the same API family: enums with string tables have identical 
 - **`Appearance::setInputValueMatrix44f(input, const float*)`**, not `const float(&)[16]`.
 - **One sampling method per sampler:**
   - `Scene::createTextureSampler(wrapU, wrapV, ETextureSamplingMethod, texture, anisotropy = 1, name)`. There is no separate min/mag.
-  - Overloads exist for `Texture2D` and `Texture2DBuffer`. RenderBuffer, TextureCube, Texture3D and StreamTexture overloads exist but are not declared.
+  - Overloads exist and are declared for `Texture2D`, `Texture2DBuffer`, `RenderBuffer` (a canvas's colour buffer) and `TextureCube`. Texture3D and StreamTexture overloads exist but are not declared.
 - **Sampling-method names:** Nearest 0, NearestWithMipmaps 1, Bilinear 2, BilinearWithMipMaps 3, Trilinear 4, MinLinearMagNearest 5, MinNearestMagLinear 6. **There is no `ETextureSamplingMethod_Linear`; use `_Bilinear`.**
 - **`LocalCamera::setViewport(uint32_t x, uint32_t y, uint32_t w, uint32_t h)`**: x and y are unsigned.
 - **Flush and publish:**
@@ -232,9 +216,15 @@ Upstream 25.0.0 is the same API family: enums with string tables have identical 
 - **Void returns:** `RamsesFrameworkConfig::setDLTApplicationID` / `setDLTApplicationDescription` / `setPeriodicLogsEnabled` and `RenderPass::getClearColor` return `void`.
 - **Animation:** `AnimationSystem` is a `SceneObject` and `AnimationObject : SceneObject`. `AnimationSequence::addAnimation` takes `uint32_t` start and stop.
 
+## DLT log levels
+
+| Item | Evidence | Label |
+|---|---|---|
+| The library takes `dlt_register_log_level_changed_callback` from libdlt 2.15.0 at run time, so a definition in the executable comes first (`../src/ramses_dlt.h`) | `.dynsym`: an undefined import; of the unit's `/lib` and `/usr/lib` libraries no other imports it | VERIFIED |
+| It passes a `DltContext *` whose first member is the 4-byte context id, and its callback sets the context's level, which gates the console and DLT alike; libdlt drops a message below the daemon's level itself | `make test-dlt` on the unit's dlt-daemon, libdlt and this library: the console quiet at the daemon's OFF without the wrapper, live with it; DLT gets the library's messages only at INFO either way | VERIFIED |
+
 ## Not reconstructed
 
 - **Renderer events.** `RamsesRenderer::dispatchEvents(IRendererEventHandler&)` and `RamsesClient::dispatchEvents(IClientEventHandler&)` are not declared: their vtable order is not checked. A renderer built on these headers has to retry `subscribeScene`/`mapScene`/`showScene` instead of waiting for events. INFERRED: undispatched events queue up.
-- **Not exercised:** `RamsesRenderer::createDisplay` and `doOneLoop`/`startThread`. There is no GPU or Wayland compositor in the test container.
-- **Not exercised by the smoke test:** `RamsesFramework::connect` over SOME/IP, which needs the unit's routing manager. Over TCP it runs in `make test-ramses`, and over SOME/IP in an emulator of the unit (participants 5 and 801).
-- **Undeclared:** `UniformInput::getDataType` / `AttributeInput::getDataType` (return enum not checked) and `Scene::saveToFile` (in 19 it is `RamsesClient::saveSceneToFile`).
+- **Not exercised:** `RamsesRenderer::createDisplay` and `doOneLoop`/`startThread`.
+- **Undeclared:** `AttributeInput::getDataType`, and the values of `ERamsesObjectType` and `EEffectInputDataType` (learned at run time, above).

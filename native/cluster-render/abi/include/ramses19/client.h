@@ -30,6 +30,14 @@ namespace ramses
     class UInt16Array : public Resource { public: RAMSES19_LIBRARY_OWNED(UInt16Array); };
     class UInt32Array : public Resource { public: RAMSES19_LIBRARY_OWNED(UInt32Array); };
 
+    class TextureCube : public Resource
+    {
+    public:
+        uint32_t getSize() const;
+        ETextureFormat getTextureFormat() const;
+        RAMSES19_LIBRARY_OWNED(TextureCube);
+    };
+
     class Texture2D : public Resource
     {
     public:
@@ -57,6 +65,7 @@ namespace ramses
         UniformInput();
         ~UniformInput() {}
         uint32_t getElementCount() const;
+        EEffectInputDataType getDataType() const;
         RAMSES19_VALUE_STORAGE(UniformInput);
     };
 
@@ -106,6 +115,25 @@ namespace ramses
         RAMSES19_VALUE_STORAGE(SceneConfig);
     };
 
+    // A resource file to load from or save to, and a set of them.
+    class ResourceFileDescription
+    {
+    public:
+        explicit ResourceFileDescription(const char* filename);
+        ~ResourceFileDescription();
+        void add(const Resource* resource);
+        RAMSES19_VALUE_STORAGE(ResourceFileDescription);
+    };
+
+    class ResourceFileDescriptionSet
+    {
+    public:
+        ResourceFileDescriptionSet();
+        ~ResourceFileDescriptionSet();
+        void add(const ResourceFileDescription& description);
+        RAMSES19_VALUE_STORAGE(ResourceFileDescriptionSet);
+    };
+
     class RamsesClient : public RamsesObject
     {
     public:
@@ -115,6 +143,12 @@ namespace ramses
         Scene* createScene(sceneId_t sceneId, const SceneConfig& sceneConfig, const char* name = nullptr);
         status_t destroy(Scene& scene);
         status_t destroy(const Resource& resource);
+        // A scene file keeps its scene id: the loaded scene has the id it was saved with.
+        Scene* loadSceneFromFile(const char* fileName, const ResourceFileDescriptionSet& resourceFileInformation);
+        status_t saveResources(const ResourceFileDescription& fileDescription, bool compress) const;
+        status_t saveSceneToFile(const Scene& scene, const char* fileName,
+                                 const ResourceFileDescriptionSet& resourceFileInformation, bool compress) const;
+        RamsesObject* findObjectByName(const char* name);
 
         Effect* createEffect(const EffectDescription& effectDesc,
                              resourceCacheFlag_t cacheFlag = ResourceCacheFlag_DoNotCache, const char* name = nullptr);
@@ -133,9 +167,23 @@ namespace ramses
         Texture2D* createTexture2D(uint32_t width, uint32_t height, ETextureFormat format, uint32_t mipMapCount,
                                    const MipLevelData mipLevelData[], bool generateMipChain = false,
                                    resourceCacheFlag_t cacheFlag = ResourceCacheFlag_DoNotCache, const char* name = nullptr);
+        TextureCube* createTextureCube(uint32_t size, ETextureFormat format, uint32_t mipMapCount,
+                                       const CubeMipLevelData mipLevelData[], bool generateMipChain = false,
+                                       resourceCacheFlag_t cacheFlag = ResourceCacheFlag_DoNotCache,
+                                       const char* name = nullptr);
 
         const char* getStatusMessage(status_t status) const;
         RAMSES19_VALUE_STORAGE(RamsesClient);
+    };
+
+    // The client's resources of a type (or of a type derived from it).
+    class ResourceIterator
+    {
+    public:
+        ResourceIterator(const RamsesClient& client, ERamsesObjectType objectType);
+        ~ResourceIterator();
+        RamsesObject* getNext();
+        RAMSES19_VALUE_STORAGE(ResourceIterator);
     };
 }
 

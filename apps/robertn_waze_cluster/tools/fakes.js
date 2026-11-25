@@ -10,17 +10,26 @@
  *
  * FakeRender speaks the render control protocol: on connect a status and the
  * log backlog. Like the render, it maps on its own: stream(true) -> starting,
- * then showing the "Waze map" page at 30 updates/s; stream(false) -> idle. The map
+ * then showing the "map" page at 30 updates/s; stream(false) -> idle. The map
  * stays when the connection closes. guide -> the status with the new
  * hide_bmw_guidance (none with `hide` null, as a tool before the switch).
  *
  * FakePatch speaks the patch daemon protocol: on connect the log backlog and
  * the current state; apply -> busy, then patched with the asked panel;
- * revert -> busy, then original; an Android Auto change -> busy, then
- * done after STEP_MS, or with `holdAa` set when the test calls
- * releaseAa(failure); status -> the current state; a command
+ * revert -> busy, then original; an Android Auto change -> busy, then,
+ * after STEP_MS (or with `holdAa` set when the test calls
+ * releaseAa(failure)), as patchd answers it: what the running aapd runs
+ * stays, and the change waits for the next head-unit start (pending,
+ * runDpi, runCard), or nothing waits when aapd runs it already; a Zoom or
+ * card change while Android Auto's patch is not planned is only saved;
+ * aaStart() is that head-unit start; status -> the current state; a command
  * while one runs -> refused, to its asker; reboot -> restarting, or with
- * `rebootFails` set, failed with that code.
+ * `rebootFails` set, failed with that code. The map settings per driver
+ * profile as patchd keeps them: `map` the settings in effect, `shared` and
+ * `own` (by id) the rest, `current` the profile last told; profile and
+ * profile-own answer as patchd does (profile-own refused for another id), or
+ * not at all with `profileMute` set (a patchd before profiles); cluster,
+ * hud, hud-size and hud-pos change `map`.
  *
  * FakeLogs speaks the logs socket: on connect its state; save -> saving,
  * then the new archive first in the list (or `failWith` as the error).
@@ -33,7 +42,7 @@ const net = require('net');
 
 const STEP_MS = 40;
 const BACKLOG = 60;
-const RENDER_PAGE = 'Waze map';
+const RENDER_PAGE = 'map';
 const RENDER_FPS = '30 updates/s';
 
 class LineServer extends EventEmitter {
@@ -124,6 +133,8 @@ class FakeRender extends LineServer {
         this.hud = 0;
         this.cluster = 1;
         this.hudState = null;
+        /* the HUD map kept shown over BMW's pop-ups (null: a tool without the field) */
+        this.hudKeep = 0;
         this._showTimer = null;
     }
 
@@ -148,6 +159,7 @@ class FakeRender extends LineServer {
         if (this.hud !== null) {
             Object.assign(s, { cluster: this.cluster, hud: this.hud, hud_state: this.hud ? this.hudState || this.state : 'off',
                 hud_width_pct: this.hudWidth || 0, hud_x: this.hudX || 0, hud_y: this.hudY || 0 });
+            if (this.hudKeep !== null) s.hud_keep_shown = this.hudKeep;
         }
         if (this.hide !== null) {
             s.hide_bmw_guidance = this.hide;
@@ -192,6 +204,7 @@ class FakeRender extends LineServer {
             const lim = (v) => (this.hudMaxX ? Math.max(-this.hudMaxX, Math.min(this.hudMaxX, v)) : v);
             if (msg.hud_x !== undefined) this.hudX = lim(Number(msg.hud_x));
             if (msg.hud_y !== undefined) this.hudY = Number(msg.hud_y);
+            if (msg.hud_keep_shown !== undefined && this.hudKeep !== null) this.hudKeep = Number(msg.hud_keep_shown);
             this._broadcast(this._status());
         }
     }
@@ -204,13 +217,15 @@ class FakePatch extends LineServer {
         this.panel = null;
         this.res = null;    /* the advertised geometry patchd reports: "WxH" */
         this.safe = null;   /* and its safe area: "WxH+X+Y" */
+        this.mapurl = undefined;   /* the map URL edit: 'eta' | 'no-eta' | 'off' | null; undefined: a daemon that does not send it */
         this.carplay = null;  /* 'deferred' once a patch is written but not active */
         this.pending = null;  /* 'apply' | 'revert': the change waiting for a head-unit start */
         this.conflict = null; /* why the install left carplay as it was */
         this.recovered = null; /* boot recovery removed the patch after that many failed starts */
+        this.removable = null;   /* Remove patch would change carplay; null: whether one of ours is on disk, undefined: a daemon that does not send it */
         this.busy = false;
         this.reason = null;
-        this.aa = { state: 'original', density: 180, densities: [150, 400, 10] };   /* Android Auto's patch */
+        this.aa = { state: 'original', density: 180, densities: [150, 400, 10], removable: false };   /* Android Auto's patch */
         this.reboots = 0;     /* reboot commands honoured */
         this.restart = { state: 'idle' };
         this.wifi = null;          /* CarPlay's Wi-Fi band: { band: '5' | '2.4', iface, freq } or null */
@@ -218,6 +233,12 @@ class FakePatch extends LineServer {
         this.mute = false;         /* commands received and not answered */
         this.holdAa = false;       /* an Android Auto change stays busy until releaseAa(failure) */
         this.releaseAa = null;
+        this.map = { cluster: 1, hud: 0, hud_width_pct: 0, hud_offset_x: 0, hud_offset_y: 0, hud_keep_shown: 0 };
+        this.shared = null;
+        this.own = {};
+        this.active = null;
+        this.current = undefined;
+        this.profileMute = false;
         this._rebooting = false;
         this._timer = null;
     }
@@ -230,12 +251,67 @@ class FakePatch extends LineServer {
         this._broadcast(this._status());
     }
 
+    /* What the running aapd runs: {dpi, card}, or null for no patch. */
+    _aaRun() {
+        const a = this.aa;
+        if (a.pending) return a.runDpi != null ? { dpi: a.runDpi, card: a.runCard || 'shown' } : null;
+        return a.state === 'patched' ? { dpi: a.dpi, card: a.diskCard || 'shown' } : null;
+    }
+
+    /* Android Auto's patch is planned for the next start. */
+    _aaArmed() {
+        const a = this.aa;
+        return a.pending ? a.pending === 'apply' : a.state === 'patched';
+    }
+
+    /* The state once plan (null: Remove patch) is armed while aapd runs run. */
+    _aaAfter(plan, run, chosen) {
+        const same = (plan && run && plan.dpi === run.dpi && plan.card === run.card) || (!plan && !run);
+        const planned = plan ? { dpi: plan.dpi, diskCard: plan.card } : {};
+        if (same) return Object.assign({ state: plan ? 'patched' : 'original' }, planned, chosen, { removable: !!plan });
+        return Object.assign({ state: 'unknown', pending: plan ? 'apply' : 'revert', aapd: 'deferred' }, planned, chosen,
+            { removable: !!plan, runDpi: run ? run.dpi : null, runCard: run ? run.card : null });
+    }
+
+    /* The next head-unit start: aapd runs what is planned, nothing waits. */
+    aaStart() {
+        const a = this.aa, chosen = { density: a.density, card: a.card, densities: a.densities };
+        this.aa = this._aaArmed() ? this._aaAfter({ dpi: a.dpi, card: a.diskCard || 'shown' }, { dpi: a.dpi, card: a.diskCard || 'shown' }, chosen)
+            : this._aaAfter(null, null, chosen);
+        this._rebooting = false;
+        this.restart = { state: 'idle' };
+        this._broadcast(this._status());
+    }
+
     _status() {
         return { ev: 'status', state: this.busy ? 'busy' : this.state, panel: this.panel,
-            res: this.res, safe: this.safe, carplay: this.carplay, reason: this.reason,
+            res: this.res, safe: this.safe, mapurl: this.mapurl, carplay: this.carplay, reason: this.reason,
             pending: this.pending, conflict: this.conflict, recovered: this.recovered, aa: this.aa,
+            removable: this.removable !== null ? this.removable : this.pending === 'apply' || (!this.pending && ['patched', 'unknown', 'error'].includes(this.state)),
             busy: this.busy ? 'carplay' : this.aa.state === 'busy' ? 'aa' : this._rebooting ? 'restart' : null,
             restart: this.restart, wifi: this.wifi };
+    }
+
+    /* patchd's profileCmd: the settings in effect saved into the entry they
+     * belong to, the profile's own or the shared ones put in effect. */
+    _profile(msg, socket) {
+        const id = msg.id == null ? null : msg.id;
+        if (msg.cmd === 'profile-own' && id !== this.current) {
+            this._send(socket, { ev: 'profile-own-reply', ok: false, reason: 'not the driver profile in effect' });
+            return;
+        }
+        if (msg.cmd === 'profile') this.current = id;
+        if (this.active) this.own[this.active] = this.map; else this.shared = this.map;
+        if (msg.cmd === 'profile-own') {
+            if (msg.on) this.own[id] = this.own[id] || this.map;
+            else delete this.own[id];
+        }
+        const target = id && this.own[id] ? id : null;
+        const want = target ? this.own[target] : this.shared;
+        const changed = JSON.stringify(want) !== JSON.stringify(this.map);
+        this.active = target;
+        this.map = want;
+        this._send(socket, { ev: `${msg.cmd}-reply`, ok: true, id, own: !!target, changed, settings: want });
     }
 
     /* CarPlay's Wi-Fi band changes, as patchd sends it: a status. */
@@ -261,6 +337,18 @@ class FakePatch extends LineServer {
         }
         if (msg.cmd === 'status') {
             this._broadcast(this._status());
+            return;
+        }
+        if (msg.cmd === 'profile' || msg.cmd === 'profile-own') {
+            if (!this.profileMute) this._profile(msg, socket);
+            return;
+        }
+        const MAP = { cluster: ['cluster'], hud: ['hud'], 'hud-size': ['hud_width_pct'], 'hud-pos': ['hud_offset_x', 'hud_offset_y'],
+            'hud-keep-shown': ['hud_keep_shown'] };
+        if (MAP[msg.cmd]) {
+            const v = msg.cmd === 'hud-pos' ? [msg.hud_x, msg.hud_y] : [msg.cmd === 'hud-size' ? msg.hud_width_pct : msg.on];
+            this.map = Object.assign({}, this.map);
+            MAP[msg.cmd].forEach((k, i) => { this.map[k] = v[i]; });
             return;
         }
         if (msg.cmd === 'reboot') {
@@ -289,14 +377,15 @@ class FakePatch extends LineServer {
         if (/^aa-/.test(msg.cmd)) {
             const density = msg.cmd === 'aa-density' ? msg.value : this.aa.density;
             const card = msg.cmd === 'aa-card' ? msg.value : this.aa.card || 'shown';
-            const after = msg.cmd === 'aa-revert' ? { state: 'original' } : { state: 'patched', dpi: density, diskCard: card };
-            const before = this.aa;
+            const before = this.aa, run = this._aaRun(), densities = before.densities;
+            const plan = msg.cmd === 'aa-revert' ? null : msg.cmd === 'aa-apply' || this._aaArmed() ? { dpi: density, card } : undefined;
             this.aa = Object.assign({}, this.aa, { state: 'busy', reason: msg.cmd === 'aa-revert' ? 'reverting' : 'applying' });
             this._broadcast(this._status());
             /* failure: the change failed so, the values on disk as they were */
             const finish = (failure) => {
                 this.aa = failure ? Object.assign({}, before, { state: 'error', reason: failure, error: failure })
-                    : { state: after.state, dpi: after.dpi, diskCard: after.diskCard, density, card, densities: this.aa.densities, aapd: 'restarted' };
+                    : plan === undefined ? Object.assign({}, before, { density, card })
+                    : this._aaAfter(plan, run, { density, card, densities });
                 this.log(msg.cmd + ' done');
                 this._broadcast(this._status());
             };
@@ -315,6 +404,7 @@ class FakePatch extends LineServer {
                  * safe area; the mid panel keeps the stock geometry. */
                 this.res = msg.panel === 'high' ? '1088x480' : null;
                 this.safe = msg.panel === 'high' ? '504x368+286+72' : null;
+                if (this.mapurl !== undefined) this.mapurl = 'eta';
                 this.reason = 'restarted';
                 this.log('apply done');
                 this._broadcast(this._status());

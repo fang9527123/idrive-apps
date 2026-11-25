@@ -19,13 +19,13 @@
     "Save logs": "Logs opslaan",
     "Not supported on this car": "Niet ondersteund in deze auto",
     "Unavailable": "Niet beschikbaar",
-    "Untested version": "Niet-geteste versie",
     "Changed by another tool": "Gewijzigd door andere tool",
     "(after restart)": "(na herstart)",
     "Status: {0}": "Status: {0}",
     "Connecting…": "Verbinden…",
     "Removed after restart": "Verwijderd na herstart",
     "Removed — head unit kept restarting": "Verwijderd — headunit bleef herstarten",
+    "Removed — Android Auto crashed": "Verwijderd — Android Auto is gecrasht",
     "Patched after restart": "Gepatcht na herstart",
     "Removing patch…": "Patch verwijderen…",
     "Patching…": "Patchen…",
@@ -38,7 +38,7 @@
     "Off": "Uit",
     "Starting…": "Starten…",
     "Showing {0}": "Toont {0}",
-    "Waze map": "Waze-kaart",
+    "map": "kaart",
     "Error": "Fout",
     "Frozen": "Bevroren",
     "Waiting for the phone": "Wachten op telefoon",
@@ -68,7 +68,7 @@
     "Not enough space": "Niet genoeg ruimte",
     "Too large to save": "Te groot om op te slaan",
     "Save failed": "Opslaan mislukt",
-    "Waze on cluster": "Waze in instrumentpaneel",
+    "Maps on cluster": "Kaarten in instrumentpaneel",
     "Show on": "Tonen in",
     "Cluster": "Paneel",
     "HUD (experimental)": "HUD (experimenteel)",
@@ -94,6 +94,8 @@
     "CarPlay Wi-Fi: {0}": "Wi-Fi van CarPlay: {0}",
     "5 GHz": "5 GHz",
     "2.4 GHz": "2,4 GHz",
-    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "Het geluid kan wegvallen. Zet Wi-Fi op je iPhone uit en weer aan."
+    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "Het geluid kan wegvallen. Zet Wi-Fi op je iPhone uit en weer aan.",
+    "Own settings for this driver": "Eigen instellingen voor deze bestuurder",
+    "Keep HUD map over BMW's pop-ups": "Kaart in HUD boven BMW-pop-ups houden"
   }
 }

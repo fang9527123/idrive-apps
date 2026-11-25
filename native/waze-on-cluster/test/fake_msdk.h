@@ -6,8 +6,8 @@
  * picture size as text, "1280x720"; a PPS (8) is required next to it; a
  * slice (1 or 5) carries, after its first byte, one byte that is the
  * picture's content. A picture decodes to every luma and chroma byte equal
- * to that content. An SPS larger than the surfaces the decoder was set up
- * for is incompatible (MFX_ERR_INCOMPATIBLE_VIDEO_PARAM); a smaller one
+ * to that content, its surface carrying the bitstream's TimeStamp. An SPS
+ * larger than the surfaces the decoder was set up for is incompatible (MFX_ERR_INCOMPATIBLE_VIDEO_PARAM); a smaller one
  * changes the pictures' size in the running sequence.
  *
  * Every call that matters goes to `calls`, in order:
@@ -16,6 +16,8 @@
  *   "header WxH"        DecodeHeader read an SPS
  *   "init WxH"          the decoder set up for a sequence
  *   "vpp-init X,Y,W,H"  VPP set up for an input rect
+ *   "vpp-reset X,Y,W,H WxH"
+ *                       VPP reset for an input rect and an output size
  *   "decode-sync"       SyncOperation on a decode task
  *   "vpp X,Y,W,H"       VPP run on a picture with this input rect
  *   "vpp-sync"          SyncOperation on a VPP task
@@ -47,6 +49,21 @@ extern GpuFault gpu_fault;
 
 /* "WxH": every picture decoded at this size, whatever its SPS says. */
 extern std::string picture_size;
+
+/* Output order: each picture comes out `delay` pictures after it went in
+ * (0: at once), as display order holds pictures. A picture whose content is
+ * `swallow` (0: none) is taken and never output, as a damaged one may be.
+ * With `timestamps` false no surface carries its bitstream's TimeStamp. */
+extern int delay;
+extern uint8_t swallow;
+extern bool timestamps;
+
+/* The newest `refs` decoded pictures stay locked as references (0: none),
+ * so the decoder hands other surfaces as work surfaces. */
+extern int refs;
+
+/* The next reset_faults VPP resets return reset_status (0: none fail). */
+extern int reset_status, reset_faults;
 
 /* An access unit of the fake stream: the SPS and PPS when sps is a size
  * ("1088x480"), then an IDR slice (idr) or a P slice whose picture is

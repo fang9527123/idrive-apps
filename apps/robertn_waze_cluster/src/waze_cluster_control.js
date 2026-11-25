@@ -12,8 +12,12 @@
  *
  *   Render control socket (RENDER_PATH)
  *     app  -> tool  {"cmd":"guide","hide":0|1}  BMW's turn box hidden while the map shows, or not
+ *                   {"cmd":"cluster"|"hud","on":"0"|"1"}, {"cmd":"hud","hud_width_pct"|"hud_x","hud_y"|"hud_keep_shown"}
+ *                    the map's settings (patchd saves them)
  *     tool -> app   {"ev":"status","state":"idle"|"starting"|"showing"|"frozen"|"error"|"unsupported",
- *                    "target","page","reason","hide_bmw_guidance","guide_disabled"}
+ *                    "target","page","reason","hide_bmw_guidance","guide_disabled","cluster","hud",
+ *                    "hud_state","hud_width_pct","hud_x","hud_y","hud_keep_shown"}
+ *                   (hud_keep_shown 0|1, absent from a tool before it)
  *                   (unsupported: the head unit refuses the tool, which stays idle)
  *                   (idle's reason: why a live stream shows no map; hide_bmw_guidance 0|1,
  *                    absent from a tool before the switch; guide_disabled 1: the cluster
@@ -41,6 +45,8 @@
  *                        many failed head-unit starts); also in aa
  *                       aa: Android Auto's patch, {"state":"original"|"patched"|
  *                        "unknown"|"absent"|"busy"|"error","reason","conflict",
+ *                        "recovered","recoveredWhy" ("crash": removed after the
+ *                        patched aapd crashed; else after failed head-unit starts),
  *                        "pending","aapd","dpi","diskCard","runDpi","runCard","density",
  *                        "card","densities":[min,max,step],"changeAt","error"}
  *                        (dpi and diskCard on disk; runDpi and runCard what runs
@@ -103,7 +109,7 @@ const SAFE = '504x368+286+72';
 const HUD_MIN_PCT = 30, HUD_MAX_PCT = 85, HUD_STEP_PCT = 5, HUD_STANDARD_PCT = 57;
 const HUD_SIZE_STEPS = (HUD_MAX_PCT - HUD_MIN_PCT) / HUD_STEP_PCT;
 /* Where the map can show, the choices in their order on the page. */
-const SHOWN_ON = ['cluster', 'hud', 'both'];
+const SHOWN_ON = ['cluster', 'hud', 'both', 'off'];
 /* The HUD map moved from its centre, HUD_MOVE_PX a press, within +-HUD_MOVE_MAX; the render holds it inside the
  * HUD and reports the offset as far as it went. An asked size or place shows until the render's status has it,
  * HUD_ASKED_MS has passed, the render reconnects or patchd fails to save the size; then the render's own. */
@@ -246,14 +252,31 @@ function headUnitRefused(conflict) {
 function conflictText(conflict) {
     return /^not supported|^not patchable|^no Android Auto/.test(conflict) ? t('Not supported on this car')
         : /unreadable/.test(conflict) ? t('Unavailable')
-        : /^untested/.test(conflict) ? t('Untested version')
         : t('Changed by another tool');
 }
 
-/* Where a render status shows the map: 'cluster', 'hud', 'both' or null. */
+/* A change that failed, with its reason: the conflict that refused it in
+ * the words both sections use, else patchd's own words. */
+function failedText(st) {
+    const why = st.error || st.reason;
+    if (st.conflict && why && why.indexOf(st.conflict) >= 0) {
+        return conflictText(st.conflict);
+    }
+    if (why && /^(not supported|not patchable)/.test(why)) {
+        return conflictText(why);
+    }
+    return why ? t('Failed, {0}', why) : t('Failed');
+}
+
+/* Where a render status shows the map: 'cluster', 'hud', 'both', 'off'
+ * (neither), or null while it has not said. */
 function shownOnOf(rs) {
+    const said = (v) => v === 0 || v === 1;
+    if (!said(rs.cluster) || !said(rs.hud)) {
+        return null;
+    }
     const cluster = rs.cluster === 1, hud = rs.hud === 1;
-    return cluster && hud ? 'both' : cluster ? 'cluster' : hud ? 'hud' : null;
+    return cluster && hud ? 'both' : cluster ? 'cluster' : hud ? 'hud' : 'off';
 }
 
 /* After a zoom or turn-card value that waits for the next head-unit start. */
@@ -356,10 +379,9 @@ class WazeClusterControl extends EventEmitter {
         }
     }
 
-    /* ---- where the map shows: the cluster, the HUD (experimental) or both ---- */
-    /* 'cluster', 'hud' or 'both': as just asked for until the render reports
-     * it, else as the render last said; null while it has not, or when it
-     * shows the map on neither. */
+    /* ---- where the map shows: the cluster, the HUD (experimental), both or neither (Off) ---- */
+    /* 'cluster', 'hud', 'both' or 'off': as just asked for until the render
+     * reports it, else as the render last said; null while it has not. */
     shownOn() {
         return this._askedShownOn || (this.renderStatus && shownOnOf(this.renderStatus));
     }
@@ -387,14 +409,15 @@ class WazeClusterControl extends EventEmitter {
         return this.render.connected() && this.connectedPatch() && this.clusterOn() !== null && this.hudOn() !== null;
     }
 
-    /* Shows the map on the cluster, the HUD or both: the render at once,
-     * patchd saves it. A display turned on goes first, so the map is never
-     * on neither. */
+    /* Shows the map on the cluster, the HUD, both or neither ('off': BMW's
+     * own content on both): the render at once, patchd saves it. A display
+     * turned on goes first, so a switch from one display to the other never
+     * passes through neither. */
     showOn(choice) {
         if (!SHOWN_ON.includes(choice) || !this.canChooseShownOn() || choice === this.shownOn()) {
             return;
         }
-        const want = { cluster: choice !== 'hud', hud: choice !== 'cluster' };
+        const want = { cluster: choice === 'cluster' || choice === 'both', hud: choice === 'hud' || choice === 'both' };
         const changes = ['cluster', 'hud'].filter((d) => this._shows(d) !== want[d]).sort((a, b) => want[b] - want[a]);
         this._askedShownOn = choice;
         changes.forEach((d) => {
@@ -532,6 +555,26 @@ class WazeClusterControl extends EventEmitter {
         this.patch.send({ cmd: 'hud-pos', hud_x: x, hud_y: y });
         this.emit('change');
     }
+    /* ---- the HUD map over BMW's pop-ups ---- */
+    /* True while the HUD map stays shown over them, false while it gives way;
+     * null while the render has not said. */
+    hudKeepShown() {
+        const v = this.renderStatus && this.renderStatus.hud_keep_shown;
+        return v === 0 || v === 1 ? v === 1 : null;
+    }
+    /* Changes as the size and place do. */
+    canKeepHud() {
+        return this.canChangeHudSize() && this.hudKeepShown() !== null;
+    }
+    /* Flips it: the render at once, patchd saves it; the render's next status shows it. */
+    toggleHudKeep() {
+        if (this.canKeepHud()) {
+            const keep = !this.hudKeepShown();
+            this.render.send({ cmd: 'hud', hud_keep_shown: keep ? '1' : '0' });
+            this.patch.send({ cmd: 'hud-keep-shown', on: keep ? 1 : 0 });
+        }
+    }
+
     hudPositionText() {
         const at = this.hudOffset();
         if (!at) {
@@ -554,11 +597,15 @@ class WazeClusterControl extends EventEmitter {
             (['original', 'unknown', 'error'].includes(ps.state) || (ps.state === 'patched' && this._outdated(ps)));
     }
 
-    /* CarPlay's Remove patch button is offered for a patch, or a state that may be one, with
-     * nothing pending. */
+    /* Remove patch is offered while something of ours is on disk, pending
+     * or not (patchd's removable); a daemon that does not say, while
+     * patched, partly patched or failed with nothing pending. */
     canDisable() {
-        const ps = this._idleStatus();
-        return !!ps && ['patched', 'unknown', 'error'].includes(ps.state);
+        const ps = this.patchStatus;
+        if (!this.connectedPatch() || !ps || this.busy()) {
+            return false;
+        }
+        return ps.removable !== undefined ? ps.removable : !this.pending() && ['patched', 'unknown', 'error'].includes(ps.state);
     }
 
     /* The daemon's status while a CarPlay change can start, else null. */
@@ -602,7 +649,7 @@ class WazeClusterControl extends EventEmitter {
             return this._lastPatchCmd === 'revert' ? t('Removing patch…') : t('Patching…');
         }
         if (ps.state === 'error') {
-            return t('Failed');
+            return failedText(ps);
         }
         if (ps.recovered && ps.state !== 'patched' && !headUnitRefused(ps.conflict)) {
             return t('Removed — head unit kept restarting');
@@ -616,10 +663,10 @@ class WazeClusterControl extends EventEmitter {
         return ps.state === 'original' ? t('Not patched') : t('Partly patched');
     }
 
-    /* The cluster map row: the shared render's map, while CarPlay's or
-     * Android Auto's patch is in effect: on disk with nothing pending, as
-     * the last status outside a change said (a running or failed change
-     * keeps it). */
+    /* The cluster map row: the shared render's map, while CarPlay's patch
+     * is in effect (on disk with nothing pending) or the running aapd runs
+     * Android Auto's, as the last status outside a change said (a running
+     * or failed change keeps it). */
     mapText() {
         return t('Cluster map: {0}', this._mapState());
     }
@@ -636,7 +683,7 @@ class WazeClusterControl extends EventEmitter {
         case 'starting':
             return t('Starting…');
         case 'showing':
-            return t('Showing {0}', rs.page || t('Waze map')) + (rs.reason ? ` — ${rs.reason}` : '');
+            return t('Showing {0}', rs.page || t('map')) + (rs.reason ? ` — ${rs.reason}` : '');
         case 'error':
             return t('Error');
         case 'frozen':
@@ -649,10 +696,11 @@ class WazeClusterControl extends EventEmitter {
     }
 
     /* A patch other than the one CarPlay's Patch button writes: another capture sink,
-     * panel, size or safe area, from an older app. */
+     * panel, size or safe area, from an older app, or the cluster map URL without
+     * the arrival-time card. */
     _outdated(ps) {
         return !!((ps.mode && ps.mode !== 'avb') || (ps.panel && ps.panel !== 'high') ||
-            (ps.res && ps.res !== SIZE) || (ps.safe && ps.safe !== SAFE));
+            (ps.res && ps.res !== SIZE) || (ps.safe && ps.safe !== SAFE) || ps.mapurl === 'no-eta');
     }
 
     /* ---- BMW's turn box ---- */
@@ -691,26 +739,49 @@ class WazeClusterControl extends EventEmitter {
         return !!aa && !this.busy() && !aa.pending;
     }
 
+    /* Nothing runs: a change may start, also while another one waits for
+     * the next head-unit start (patchd then plans or turns off again, and
+     * that start applies the last one). */
+    _aaFree() {
+        return !!this.aa() && !this.busy();
+    }
+
+    /* Android Auto's patch is planned for the next start: in effect with
+     * nothing waiting, or a Patch, Zoom or card change waiting. */
+    _aaArmed() {
+        const aa = this.aa();
+        return !!aa && (aa.pending ? aa.pending === 'apply' : aa.state === 'patched');
+    }
+
     /* A density or card change is refused until aa.changeAt. */
     _aaSpaced() {
         const aa = this.aa();
         return !!aa && aa.changeAt > Date.now();
     }
 
+    _aaBlocked() {
+        const aa = this.aa();
+        return !!aa && !!aa.conflict;
+    }
+
+    /* Patch: also over a Remove patch that waits for the next start. */
     canEnableAa() {
         const aa = this.aa();
-        return this._aaIdle() && !aa.conflict && ['original', 'unknown', 'error'].includes(aa.state);
+        return this._aaFree() && !this._aaBlocked() && aa.pending !== 'apply' && ['original', 'unknown', 'error'].includes(aa.state);
     }
 
     canDisableAa() {
         const aa = this.aa();
-        return this._aaIdle() && ['patched', 'unknown', 'error'].includes(aa.state);
+        if (!aa || this.busy()) {
+            return false;
+        }
+        return aa.removable !== undefined ? aa.removable : this._aaIdle() && ['patched', 'unknown', 'error'].includes(aa.state);
     }
 
-    /* Zoom out shows more map: a lower density, from the one on disk. */
+    /* Zoom out shows more map: a lower density, from the planned one. */
     canZoom(step) {
         const aa = this.aa();
-        if (!this._aaIdle() || this._aaSpaced() || aa.state !== 'patched' || headUnitRefused(aa.conflict) || !aa.densities || aa.dpi == null) {
+        if (!this._aaFree() || this._aaSpaced() || this._aaBlocked() || !this._aaArmed() || !aa.densities || aa.dpi == null) {
             return false;
         }
         const next = aa.dpi + step;
@@ -719,7 +790,7 @@ class WazeClusterControl extends EventEmitter {
 
     canToggleCard() {
         const aa = this.aa();
-        return this._aaIdle() && !this._aaSpaced() && aa.state === 'patched' && !headUnitRefused(aa.conflict) && !!aa.diskCard;
+        return this._aaFree() && !this._aaSpaced() && !this._aaBlocked() && this._aaArmed() && !!aa.diskCard;
     }
 
     /* The density on disk, marked when the one aapd runs until the next
@@ -787,15 +858,17 @@ class WazeClusterControl extends EventEmitter {
             return aa.reason === 'reverting' ? t('Removing patch…') : t('Patching…');
         }
         if (aa.state === 'error' || aa.error) {
-            return t('Failed');
+            return failedText(aa);
         }
         if (aa.pending && !(aa.pending === 'apply' && headUnitRefused(aa.conflict))) {
             return aa.pending === 'revert' ? t('Removed after restart') : t('Patched after restart');
         }
         if (aa.recovered && aa.state !== 'patched' && !headUnitRefused(aa.conflict)) {
-            return t('Removed — head unit kept restarting');
+            return aa.recoveredWhy === 'crash' ? t('Removed — Android Auto crashed') : t('Removed — head unit kept restarting');
         }
-        if (aa.state === 'absent' || (aa.conflict && (aa.state !== 'patched' || headUnitRefused(aa.conflict)))) {
+        /* A conflict patchd refuses changes for is named also while patched,
+         * since it greys Zoom and the turn card. */
+        if (aa.state === 'absent' || (aa.conflict && (aa.state !== 'patched' || this._aaBlocked()))) {
             return conflictText(aa.conflict || 'no Android Auto');
         }
         return aa.state === 'patched' ? t('Patched') : aa.state === 'original' ? t('Not patched') : t('Partly patched');
@@ -963,7 +1036,9 @@ class WazeClusterControl extends EventEmitter {
     }
 
     /* From a status outside a change (neither busy nor an error): which
-     * patch is in effect. */
+     * patch is in effect. While an Android Auto change waits for the next
+     * head-unit start, what the running aapd runs (runDpi: null for none);
+     * a patchd that does not say leaves it as it was. */
     _noteInEffect() {
         const ps = this.patchStatus;
         if (ps.state !== 'busy' && ps.state !== 'error' && ps.busy !== 'carplay') {
@@ -971,7 +1046,8 @@ class WazeClusterControl extends EventEmitter {
         }
         const aa = ps.aa;
         if (aa && aa.state !== 'busy' && aa.state !== 'error') {
-            this._inEffect.androidAuto = aa.state === 'patched' && !aa.pending;
+            this._inEffect.androidAuto = !aa.pending ? aa.state === 'patched'
+                : aa.runDpi !== undefined ? aa.runDpi !== null : this._inEffect.androidAuto;
         }
     }
 
@@ -1013,7 +1089,7 @@ class WazeClusterControl extends EventEmitter {
             this._noteCardAsked(msg);
             this._wake();
             this.emit('change');
-        } else if (/^(cluster|hud|hud-size|hud-pos)-reply$/.test(msg.ev)) {
+        } else if (/^(cluster|hud|hud-size|hud-pos|hud-keep-shown)-reply$/.test(msg.ev)) {
             if (!msg.ok) {
                 this._log.info(`patchd did not save the setting: ${msg.reason || 'refused'}`);
             }

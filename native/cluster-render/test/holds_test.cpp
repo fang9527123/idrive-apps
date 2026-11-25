@@ -12,7 +12,8 @@
  * target added: a slot that is not whole hex from 0x1 to 0xfff, a slot
  * listed twice or another target's, a scene id not allowed or another
  * target's, a take-over content that is not whole hex, none, no map, no
- * slot. */
+ * slot. The panel: its fallback scene id another allowed id, none when empty or its own id,
+ * anything else refused. */
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
@@ -84,17 +85,59 @@ int main()
     {
         TargetSpec h;
         h.name = "hud"; h.slot = 0x323; h.scene_id = 0x01000400;
-        ok("hud: slot 0x323 taken, with the HUD's share, struck out at 2", hud_rules(&h, &err) && h.share && h.strike_limit == 2);
+        ok("hud: slot 0x323 taken, with the HUD's share", hud_rules(&h, &err) && h.share);
         TargetSpec scene;
         scene.name = "hud"; scene.slot = 0x323; scene.scene_id = 0x010004f0;
         ok("hud: another scene id (the map's) refused", !hud_rules(&scene, &err) && !scene.share);
         TargetSpec other;
         other.name = "hud"; other.slot = 0x330; other.scene_id = 0x01000400;
-        ok("hud: any other slot refused, nothing set", !hud_rules(&other, &err) && !other.share && other.strike_limit == 0 &&
+        ok("hud: any other slot refused, nothing set", !hud_rules(&other, &err) && !other.share &&
                                                         err.find("hud_slot 0x330") != std::string::npos);
         TargetSpec taking;
         taking.name = "hud"; taking.slot = 0x323; taking.scene_id = 0x01000400; taking.take_over_stock = true;
         ok("hud: a take-over from the stock HMI refused", !hud_rules(&taking, &err));
+    }
+    {
+        const std::vector<uint64_t> allowed = {0x010004f0, 0x01000400, 0x010004f1, 0x010004f8};
+        const auto panel = [](uint64_t scene) {
+            TargetSpec p;
+            p.name = "panel"; p.slot = 0x203; p.scene_id = scene;
+            return p;
+        };
+        TargetSpec p = panel(0x010004f8);
+        ok("panel: a fallback of another allowed id",
+           fallback_rules(&p, "0x01000400", allowed, &err) && p.fallback_scene_id == 0x01000400);
+        p = panel(0x010004f8);
+        ok("panel: empty, no fallback",
+           fallback_rules(&p, "", allowed, &err) && p.fallback_scene_id == 0);
+        p = panel(0x01000400);
+        ok("panel: on the HUD's id with it as fallback: no fallback",
+           fallback_rules(&p, "0x01000400", allowed, &err) && p.fallback_scene_id == 0);
+        p = panel(0x010004f8);
+        ok("panel: its own id as fallback: none",
+           fallback_rules(&p, "0x010004f8", allowed, &err) && p.fallback_scene_id == 0);
+        p = panel(0x010004f8);
+        ok("panel: a decimal id taken", fallback_rules(&p, "16778240", allowed, &err) && p.fallback_scene_id == 0x01000400);
+        p = panel(0x010004f8);
+        ok("panel: an id not allowed refused, no fallback set",
+           !fallback_rules(&p, "0x010004fa", allowed, &err) && p.fallback_scene_id == 0 &&
+               err == "panel_fallback_scene_id 0x10004fa is not in scene_ids_allowed");
+        for (const char *bad : {"0x0100040g", "panel", "-1", " 0x01000400"}) {
+            p = panel(0x010004f8);
+            ok(("panel: not a number refused: \"" + std::string(bad) + "\"").c_str(),
+               !fallback_rules(&p, bad, allowed, &err) && p.fallback_scene_id == 0 &&
+                   err.find("must be a number") != std::string::npos);
+        }
+        std::vector<uint64_t> shipped_allowed;
+        std::stringstream ss(shipped("scene_ids_allowed"));
+        for (std::string id; std::getline(ss, id, ',');)
+            shipped_allowed.push_back(std::strtoull(id.c_str(), nullptr, 0));
+        p = panel(std::strtoull(shipped("panel_scene_id").c_str(), nullptr, 0));
+        ok("shipped: the panel on 0x10004f8, falling back to the HUD's 0x1000400, both allowed",
+           p.scene_id == 0x010004f8 && shipped("hud_scene_id") == "0x01000400" &&
+               std::find(shipped_allowed.begin(), shipped_allowed.end(), 0x010004f8) != shipped_allowed.end() &&
+               fallback_rules(&p, shipped("panel_fallback_scene_id"), shipped_allowed, &err) &&
+               p.fallback_scene_id == 0x01000400);
     }
     ok("shipped: a hold", shipped("guide_hold") == "1" && load({}, &t, &err) && t.size() == 2 && err.empty());
     {
@@ -122,14 +165,13 @@ int main()
     ok("on: a hold of 0x105 following the map, never drawn",
        load({"guide_hold=1"}, &t, &err) && t.size() == 2 && t[1].name == "guide_0x105" && t[1].slot == 0x105 &&
            t[1].scene_id == 0x010004f1 && t[1].follows == "map" && t[1].take_over_stock && t[1].linger_ms == 0 &&
-           t[1].width == 16 && t[1].height == 16 && t[1].content_class == 0 && t[1].strike_limit == 2 &&
-           t[0].strike_limit == 0 &&
+           t[1].width == 16 && t[1].height == 16 && t[1].content_class == 0 &&
            t[1].take_over_contents == std::vector<uint64_t>{0x01000310});
     ok("auto: one hold whose slot is 0x105 or 0x103 from the slot table, with guide_scene_id, following the map",
        load({"guide_hold=1", "guide_slots=auto"}, &t, &err) && t.size() == 2 && t[1].name == "guide_auto" &&
            t[1].slot == 0 && t[1].table_slots == std::vector<uint64_t>{0x105, 0x103} &&
            t[1].scene_id == 0x010004f1 && t[1].follows == "map" &&
-           t[1].take_over_stock && t[1].strike_limit == 2 &&
+           t[1].take_over_stock &&
            t[1].take_over_contents == std::vector<uint64_t>{0x01000310} && err.empty());
     ok("a slot id: no slot from the table", load({"guide_hold=1"}, &t, &err) && t[1].table_slots.empty());
     {

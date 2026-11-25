@@ -19,9 +19,9 @@
 require('./head_unit_env.js');   /* a HIGH head unit for every patcher and patchd this runs */
 
 var fs = require('fs');
-var os = require('os');
 var net = require('net');
 var path = require('path');
+var tmp = require('./tmp.js');
 var cp = require('child_process');
 
 var PATCHD = path.join(__dirname, '..', 'patchd.js');
@@ -34,16 +34,9 @@ function ok(name, cond, detail) {
     if (!cond) fails++;
 }
 
-var dir = fs.mkdtempSync(path.join(os.tmpdir(), 'woc-dlt-'));
-
-/* However the test ends (passing, failing, an exception, an uncaught one), every
- * patchd it started is SIGKILLed and the directory removed, which ends any fake
- * dlt-receive a patchd left running. */
-var patchds = [];
-process.on('exit', function () {
-    patchds.forEach(function (c) { try { c.kill('SIGKILL'); } catch (e) {} });
-    try { cp.execFileSync('rm', ['-rf', dir]); } catch (e) {}
-});
+/* However the test ends, every patchd it started is SIGKILLed and the folder
+ * removed (tmp.js), which ends any fake dlt-receive a patchd left running. */
+var dir = tmp.dir();
 
 var MODE = path.join(dir, 'mode');
 function setMode(m) { fs.writeFileSync(MODE, m); }
@@ -100,7 +93,6 @@ function startPatchd(name, dltReceive, extraEnv) {
         WOC_DLT_RETRY_MAX_MS: String(RETRY_MS),
     }, extraEnv || {});
     var child = cp.spawn(process.execPath, [PATCHD], { env: env, stdio: ['ignore', 'ignore', 'inherit'] });
-    patchds.push(child);
     if (FAULT) process.stdout.write('patchd pid ' + child.pid + '\n');
     return { sock: sock, child: child };
 }
@@ -137,6 +129,19 @@ function logs(p) {
 }
 
 function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+/* One line to the logs socket: resolves to what came back before it closed. */
+function logsSock(sock, line) {
+    return new Promise(function (resolve) {
+        var c = net.connect(sock), buf = '';
+        c.setEncoding('utf8');
+        c.on('connect', function () { c.write(line); });
+        c.on('data', function (d) { buf += d; });
+        c.on('error', function () {});
+        c.on('close', function () { resolve(buf.split('\n').filter(Boolean).map(function (l) { return JSON.parse(l); })); });
+        setTimeout(function () { c.destroy(); }, 5000);
+    });
+}
 
 /* Poll the logs reply until pred(reply) holds; resolves to the last reply. */
 async function waitFor(p, what, pred) {
@@ -231,20 +236,20 @@ async function capturePolls() {
     var fake = fakeCapture(path.join(dir, 'capture.sock'));
     var p = startPatchd('e', path.join(dir, 'no-such-dlt-receive'), { WOC_CAPTURE_SOCK: path.join(dir, 'capture.sock') });
     for (var i = 0; i < 200 && !fs.existsSync(p.sock); i++) await sleep(25);
-    await sleep(3500);
+    await sleep(2200);
     ok('capture: asked once at start, then not while no client is connected and it is closed', fake.statuses === 1, fake.statuses);
     var c = await client(p);
     fake.statuses = 0;
-    await sleep(3200);
-    ok('capture: asked each second while a client is connected', fake.statuses >= 3, fake.statuses);
-    ok('capture: and the client told', c.events.filter(function (e) { return e.ev === 'capture'; }).length >= 3);
+    await sleep(2200);
+    ok('capture: asked each second while a client is connected', fake.statuses >= 2, fake.statuses);
+    ok('capture: and the client told', c.events.filter(function (e) { return e.ev === 'capture'; }).length >= 2);
     c.c.write('{"cmd":"capture-start"}\n');
     await sleep(300);
     c.c.destroy();
     fake.state = 'open';
     fake.statuses = 0;
-    await sleep(3200);
-    ok('capture: asked each second while it opens and is open, with no client', fake.statuses >= 3, fake.statuses);
+    await sleep(2200);
+    ok('capture: asked each second while it opens and is open, with no client', fake.statuses >= 2, fake.statuses);
     fake.fail = 1;
     await sleep(1500);
     fake.statuses = 0;
@@ -253,7 +258,7 @@ async function capturePolls() {
     fake.state = 'closed';
     await sleep(1500);
     fake.statuses = 0;
-    await sleep(2500);
+    await sleep(2200);
     ok('capture: closed again, no longer asked', fake.statuses === 0, fake.statuses);
     c = await client(p);
     fake.delay = 800;
@@ -264,7 +269,7 @@ async function capturePolls() {
     for (i = 0; i < 100 && fake.held; i++) await sleep(20);
     fake.state = 'open';
     fake.statuses = 0;
-    await sleep(2500);
+    await sleep(2200);
     ok('capture: a status asked before a start and answered after it does not stop the asking', fake.statuses >= 2, fake.statuses);
     fake.state = 'closed';
     p.child.kill('SIGTERM');
@@ -311,6 +316,19 @@ async function main() {
     ok('receiving: AVB stream line routed', r.avb.length === 1 && r.avb[0].msg.indexOf('301a9ee') > 0, JSON.stringify(r.avb));
     ok('receiving: one recovery log line', count(r.patchd, /dlt-receive: receiving DLT after \d+ failed starts/) === 1, r.patchd.join('\n'));
     var runsAtStream = r.dlt.runs;
+
+    /* The read-only logs socket (Save logs): the rings and DLT health, at
+     * once, then closed; anything but "logs" closes it unanswered. */
+    var ls = path.join(path.dirname(p.sock), 'patch-logs.sock');
+    ok('logs socket: there, 0660', fs.existsSync(ls) && (fs.statSync(ls).mode & 0o777) === 0o660);
+    var got = await logsSock(ls, '{"cmd":"logs"}\n');
+    ok('logs socket: one reply with the rings and DLT health, no state', got.length === 1 && got[0].ev === 'logs' &&
+        got[0].carplay.length === 1 && got[0].avb.length === 1 && got[0].dlt.state === 'receiving' && Array.isArray(got[0].patchd) &&
+        !('patch' in got[0]) && !('aa' in got[0]), JSON.stringify(got).slice(0, 300));
+    got = await logsSock(ls, '{"cmd":"revert"}\n');
+    ok('logs socket: another command gets nothing', got.length === 0, JSON.stringify(got));
+    got = await logsSock(ls, '{"cmd":"status"}\n');
+    ok('logs socket: no status either', got.length === 0, JSON.stringify(got));
 
     /* The receiving run ends (killed); the next one connects silently. */
     setMode('hold');

@@ -17,13 +17,13 @@
     "Save logs": "Tallenna lokit",
     "Not supported on this car": "Ei tuettu tässä autossa",
     "Unavailable": "Ei saatavilla",
-    "Untested version": "Testaamaton versio",
     "Changed by another tool": "Toisen työkalun muuttama",
     "(after restart)": "(uudelleenkäynnistyksen jälkeen)",
     "Status: {0}": "Tila: {0}",
     "Connecting…": "Yhdistetään…",
     "Removed after restart": "Poistuu uudelleenkäynnistyksen jälkeen",
     "Removed — head unit kept restarting": "Poistettu — pääyksikkö käynnistyi jatkuvasti uudelleen",
+    "Removed — Android Auto crashed": "Poistettu — Android Auto kaatui",
     "Patched after restart": "Korjattu uudelleenkäynnistyksen jälkeen",
     "Removing patch…": "Poistetaan korjausta…",
     "Patching…": "Asennetaan korjausta…",
@@ -36,7 +36,7 @@
     "Off": "Pois",
     "Starting…": "Käynnistetään…",
     "Showing {0}": "Näytetään {0}",
-    "Waze map": "Waze-kartta",
+    "map": "kartta",
     "Error": "Virhe",
     "Frozen": "Jumittunut",
     "Waiting for the phone": "Odotetaan puhelinta",
@@ -66,7 +66,7 @@
     "Not enough space": "Tila ei riitä",
     "Too large to save": "Liian suuri tallennettavaksi",
     "Save failed": "Tallennus epäonnistui",
-    "Waze on cluster": "Waze mittaristossa",
+    "Maps on cluster": "Kartat mittaristossa",
     "Show on": "Näytä",
     "Cluster": "Mittaristo",
     "HUD (experimental)": "HUD (kokeellinen)",
@@ -92,6 +92,8 @@
     "CarPlay Wi-Fi: {0}": "CarPlayn Wi-Fi: {0}",
     "5 GHz": "5 GHz",
     "2.4 GHz": "2,4 GHz",
-    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "Ääni voi katkeilla. Laita iPhonen Wi-Fi pois ja takaisin päälle."
+    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "Ääni voi katkeilla. Laita iPhonen Wi-Fi pois ja takaisin päälle.",
+    "Own settings for this driver": "Omat asetukset tälle kuljettajalle",
+    "Keep HUD map over BMW's pop-ups": "Pidä HUD-kartta BMW:n ponnahdusikkunoiden päällä"
   }
 }

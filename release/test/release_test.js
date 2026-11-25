@@ -10,7 +10,8 @@
  * `deactivate`, `mguHmi`, `keepRunning`, ...) and leaves `requires` and
  * `uninstallable` to the catalog, as mgu-store's `deploy/hu artifact`; a malformed
  * `requires` or `mguHmi` is refused; the build tree takes each submodule at
- * the commit HEAD records, and refuses one its checkout lacks; and this
+ * the commit HEAD records, and refuses one its checkout lacks; a unit's
+ * `runsInSafeMode` reaches the artifact; and this
  * repository's Waze chain is
  * declared: the app (for iDrive 7) requires waze-on-cluster, which requires
  * cluster-render and a deploy tool that runs install hooks, and has both
@@ -19,7 +20,14 @@
  * each entry's `texts`, as mgu-store's updater reads them, in any key
  * order; a file naming an id that is not a component, or anything but a
  * title and a description, is refused; a
- * published entry carried over takes its component's texts.
+ * published entry carried over takes its component's texts. Versions: the
+ * release gives each component changed since its <id>@<version> tag the next
+ * version (a patch; minor or major by its pull requests' labels), once for
+ * any number of changes, keeps a version not released yet, resolves
+ * "requires" of "next" and turns the CHANGELOG's Unreleased section into the
+ * version's; an app's staged tree has no version in its folder name.
+ * Icons: an app's catalog entry names <id>.png with the sha256 of the PNG
+ * its entry point shows; a tool's names none.
  *
  *   node release/test/release_test.js
  */
@@ -30,7 +38,8 @@ const path = require('path');
 const zlib = require('zlib');
 const cp = require('child_process');
 const { buildArtifact } = require('../tool_artifact.js');
-const { components, catalogEntry, catalogTexts, retext, exportHead } = require('../release.js');
+const { components, catalogEntry, catalogTexts, retext, exportHead, bumpVersion, releaseChangelog, plan, writePlan,
+    prLabels } = require('../release.js');
 const catalog = require('../catalog.js');
 
 /* The members of a tgz the packer wrote (ustar), by name. */
@@ -92,6 +101,22 @@ test('a tool artifact keeps the fields the deploy tool reads', () => {
     assert.strictEqual(m.uninstallable, undefined, 'the catalog\'s');
     assert.strictEqual(m.mguProvides, undefined, 'only fields the tool sets');
     assert.deepStrictEqual(m.files.map((f) => f.path), ['hook.js']);
+});
+
+test('a tool artifact keeps runsInSafeMode on the units that set it, and nothing on the others', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mgu-rel-test-'));
+    const dir = fixtureTool(root, Object.assign({}, FIXTURE, { units: [
+        { name: 'fixture-tool.service', from: 'systemd/fixture-tool.service' },
+        { name: 'fixture-tool-boot.service', from: 'systemd/fixture-tool.service', runsInSafeMode: true }] }));
+    const m = JSON.parse(untgz(buildArtifact(dir, path.join(root, 'out')))['component.json'].toString('utf8'));
+    assert.deepStrictEqual(m.units, [{ name: 'fixture-tool.service' }, { name: 'fixture-tool-boot.service', runsInSafeMode: true }]);
+});
+
+test('waze-on-cluster\'s units that put CarPlay and aapd back run in safe mode; the rest do not', () => {
+    const c = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'native', 'waze-on-cluster', 'component.json'), 'utf8'));
+    assert.deepStrictEqual(c.units.filter((u) => u.runsInSafeMode === true).map((u) => u.name),
+        ['waze-on-cluster-boot.service', 'waze-on-cluster-aa-boot.service', 'waze-on-cluster-recovery.service']);
+    assert.ok(c.units.every((u) => u.runsInSafeMode === undefined || u.runsInSafeMode === true));
 });
 
 test('a tool catalog entry carries requires, mguHmi and uninstallable; the catalog check accepts it', () => {
@@ -161,9 +186,10 @@ test('the Waze chain: app -> waze-on-cluster -> cluster-render and a hook-runnin
     assert.ok(catalog.compareVersions(tool.version, app.requires['waze-on-cluster']) >= 0,
         'the tool meets the app\'s requirement');
     assert.deepStrictEqual(Object.keys(tool.requires), ['mgu-deploy', 'cluster-render'], 'the deploy tool installs first');
-    assert.strictEqual(tool.requires['mgu-deploy'], '0.7.11', 'hooks, and recmgr and crashNames names on the lists');
-    assert.ok(catalog.compareVersions(renderer.version, tool.requires['cluster-render']) >= 0,
-        'the renderer released beside it meets the tool\'s minimum');
+    assert.strictEqual(tool.requires['mgu-deploy'], '0.7.17', 'hooks, recmgr and crashNames names on the lists, and the deactivate before a rollback or downgrade');
+    const needs = tool.requires['cluster-render'];
+    assert.ok(needs === 'next' || (catalog.SEMVER.test(needs) && catalog.compareVersions(renderer.version, needs) >= 0),
+        'the renderer released beside it meets the tool\'s minimum, or is the one released with it');
     assert.deepStrictEqual(renderer.requires, { 'mgu-deploy': '0.4.0' });
     assert.deepStrictEqual(tool.mguHmi, ['ID7']);
     const c = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'native', 'waze-on-cluster', 'component.json'), 'utf8'));
@@ -174,14 +200,16 @@ test('the Waze chain: app -> waze-on-cluster -> cluster-render and a hook-runnin
     // neither is started or restarted by the deploy tool
     assert.ok(c.recmgr.includes('carplay') && c.recmgr.includes('waze-on-cluster-boot'));
     assert.ok(!c.restart.some((u) => /^(carplay|waze-on-cluster-boot)\.service$/.test(u)));
-    // the shutdown record's drop-in and carplay's, removed with the tool;
-    // patchd restarts carplay only once systemd loaded the latter where the
-    // deploy tool writes it
+    // the shutdown record's drop-in, carplay's and aapd's, removed with the
+    // tool; patchd restarts carplay only once systemd loaded carplay's where
+    // the deploy tool writes it; aapd's reads the env file of a start armed
+    // in memory
     assert.deepStrictEqual(c.dropins.map((d) => [d.unit, d.name]),
-        [['var-opt-ro.service', '50-waze-on-cluster.conf'], ['carplay.service', '50-waze-on-cluster.conf']]);
+        [['var-opt-ro.service', '50-waze-on-cluster.conf'], ['carplay.service', '50-waze-on-cluster.conf'], ['aapd.service', '50-waze-on-cluster.conf']]);
     const woc = path.join(__dirname, '..', '..', 'native', 'waze-on-cluster');
     c.dropins.forEach((d) => assert.ok(fs.existsSync(path.join(woc, d.from)), d.from));
     assert.ok(/^SuccessExitStatus=SIGKILL$/m.test(fs.readFileSync(path.join(woc, c.dropins[1].from), 'utf8')));
+    assert.ok(/^EnvironmentFile=-\/run\/woc-preload\/aapd\.env$/m.test(fs.readFileSync(path.join(woc, c.dropins[2].from), 'utf8')));
     assert.ok(fs.readFileSync(path.join(woc, 'patch', 'patchd.js'), 'utf8')
         .includes(`'/etc/systemd/system/${c.dropins[1].unit}.d/${c.dropins[1].name}'`));
     assert.deepStrictEqual(renderer.mguHmi, ['ID7', 'ID8'], 'the renderer serves iDrive 8 too');
@@ -257,6 +285,143 @@ test('this repository\'s release/texts name its components, every language each'
     const codes = fs.readdirSync(path.join(__dirname, '..', 'texts')).filter((n) => /\.json$/.test(n)).map((n) => n.slice(0, -5)).sort();
     assert.ok(codes.length > 0, 'release/texts has languages');
     all.forEach((c) => assert.deepStrictEqual(Object.keys(c.texts || {}).sort(), codes, c.id));
+});
+
+/* A git repository with tools a (1.0.0, with a CHANGELOG) and b (2.0.0,
+ * requiring a 1.0.0), each released (tagged). */
+function versionRepo() {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mgu-rel-ver-'));
+    fs.mkdirSync(path.join(root, 'apps'));
+    const g = (args) => cp.execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false']
+        .concat(args), { cwd: root, encoding: 'utf8' }).trim();
+    const a = fixtureTool(root, Object.assign({}, FIXTURE, { id: 'a', version: '1.0.0', requires: undefined }));
+    fs.writeFileSync(path.join(a, 'CHANGELOG.md'), '# Changelog\n\n## 1.0.0\n\nFirst.\n');
+    fixtureTool(root, Object.assign({}, FIXTURE, { id: 'b', version: '2.0.0', requires: { a: '1.0.0' } }));
+    g(['init', '-q']);
+    g(['add', '.']);
+    g(['commit', '-q', '-m', 'one']);
+    g(['tag', 'a@1.0.0']);
+    g(['tag', 'b@2.0.0']);
+    const change = (rel, text, log) => {
+        fs.writeFileSync(path.join(root, rel), text);
+        if (log) {
+            const file = path.join(root, 'native', 'a', 'CHANGELOG.md');
+            const t = fs.readFileSync(file, 'utf8');
+            const u = t.includes('## Unreleased\n') ? t.replace('## Unreleased\n\n', `## Unreleased\n\n${log}\n`)
+                : t.replace('# Changelog\n\n', `# Changelog\n\n## Unreleased\n\n${log}\n\n`);
+            fs.writeFileSync(file, u);
+        }
+        g(['add', '.']);
+        g(['commit', '-q', '-m', rel]);
+        return g(['rev-parse', 'HEAD']);
+    };
+    const stamp = (ids) => {
+        const steps = plan(components(root), ids || [], root);
+        writePlan(root, steps);
+        if (steps.length) {
+            g(['commit', '-q', '-am', 'release']);
+        }
+        steps.forEach((p) => g(['tag', `${p.c.id}@${p.version}`]));
+        return steps.map((p) => `${p.c.id}@${p.version}`);
+    };
+    const json = (id) => JSON.parse(fs.readFileSync(path.join(root, 'native', id, 'component.json'), 'utf8'));
+    return { root, change, stamp, json, log: () => fs.readFileSync(path.join(root, 'native', 'a', 'CHANGELOG.md'), 'utf8') };
+}
+
+test('versions: the next version, a patch or what a label asks for', () => {
+    assert.strictEqual(bumpVersion('0.6.2', 'patch'), '0.6.3');
+    assert.strictEqual(bumpVersion('0.6.2', 'minor'), '0.7.0');
+    assert.strictEqual(bumpVersion('0.6.2', 'major'), '1.0.0');
+    process.env.MGU_RELEASE_LABELS = 'off';
+    const r = versionRepo();
+    assert.deepStrictEqual(plan(components(r.root), [], r.root), [], 'nothing changed since the tags');
+    r.change('native/a/hook.js', 'console.log(1);\n', 'Fix one.');
+    assert.deepStrictEqual(r.stamp(), ['a@1.0.1'], 'a patch; b unchanged');
+    assert.strictEqual(r.json('a').version, '1.0.1');
+    assert.ok(r.log().startsWith('# Changelog\n\n## Unreleased\n\n## 1.0.1\n\nFix one.\n\n## 1.0.0\n'), r.log());
+    const sha = r.change('native/a/hook.js', 'console.log(2);\n', 'New thing.');
+    prLabels.set(sha, ['enhancement', 'release:minor']);
+    assert.deepStrictEqual(r.stamp(), ['a@1.1.0'], 'release:minor');
+    const major = r.change('native/a/hook.js', 'console.log(3);\n', 'Breaks.');
+    prLabels.set(major, ['release:minor', 'release:major']);
+    assert.deepStrictEqual(r.stamp(), ['a@2.0.0'], 'the highest label wins');
+});
+
+test('versions: two changes in a row give one version, with both CHANGELOG entries', () => {
+    const r = versionRepo();
+    r.change('native/a/hook.js', 'console.log(1);\n', 'First fix.');
+    r.change('native/a/hook.js', 'console.log(2);\n', 'Second fix.');
+    assert.deepStrictEqual(r.stamp(), ['a@1.0.1']);
+    assert.ok(r.log().includes('## 1.0.1\n\nSecond fix.\nFirst fix.\n\n## 1.0.0'), r.log());
+    assert.deepStrictEqual(r.stamp(), [], 'released: nothing left');
+});
+
+test('versions: "requires" of "next" is the version released with it, or the one released before', () => {
+    const r = versionRepo();
+    r.change('native/a/hook.js', 'console.log(1);\n', 'Fix.');
+    r.change('native/b/component.json', JSON.stringify(Object.assign(r.json('b'), { requires: { a: 'next' } }), null, 2));
+    assert.deepStrictEqual(r.stamp(), ['a@1.0.1', 'b@2.0.1']);
+    assert.deepStrictEqual(r.json('b').requires, { a: '1.0.1' });
+    // a released first, on its own: b's "next" is a's version
+    r.change('native/a/hook.js', 'console.log(2);\n', 'Fix again.');
+    assert.deepStrictEqual(r.stamp(['a']), ['a@1.0.2']);
+    r.change('native/b/component.json', JSON.stringify(Object.assign(r.json('b'), { requires: { a: 'next' } }), null, 2));
+    assert.deepStrictEqual(r.stamp(['b']), ['b@2.0.2']);
+    assert.deepStrictEqual(r.json('b').requires, { a: '1.0.2' });
+    // b chosen alone brings a's unreleased change along
+    r.change('native/a/hook.js', 'console.log(3);\n', 'Fix a third time.');
+    r.change('native/b/component.json', JSON.stringify(Object.assign(r.json('b'), { requires: { a: 'next' } }), null, 2));
+    assert.deepStrictEqual(r.stamp(['b']), ['a@1.0.3', 'b@2.0.3']);
+    assert.deepStrictEqual(r.json('b').requires, { a: '1.0.3' });
+});
+
+test('versions: a version stamped and not released keeps its number; later entries join its section', () => {
+    const r = versionRepo();
+    r.change('native/a/hook.js', 'console.log(1);\n', 'Fix.');
+    const steps = plan(components(r.root), [], r.root);
+    writePlan(r.root, steps);   // stamped, never tagged: the publish did not happen
+    r.change('native/a/hook.js', 'console.log(2);\n', 'Another fix.');
+    assert.deepStrictEqual(r.stamp(), ['a@1.0.1'], 'no second bump');
+    assert.ok(r.log().startsWith('# Changelog\n\n## Unreleased\n\n## 1.0.1\n\nAnother fix.\n\nFix.\n\n## 1.0.0\n'), r.log());
+    assert.strictEqual(releaseChangelog('# C\n\n## 1.0.0\n\nx\n', '1.0.1'), null, 'no Unreleased section');
+    assert.strictEqual(releaseChangelog('# C\n\n## Unreleased\n\n## 1.0.0\n\nx\n', '1.0.1'), null, 'an empty one');
+    // two pull requests that each added the heading, merged with both sides' lines (merge=union)
+    assert.strictEqual(releaseChangelog('# C\n\n## Unreleased\n\nOne.\n\n## Unreleased\n\nTwo.\n\n## 1.0.0\n\nx\n', '1.0.1'),
+        '# C\n\n## Unreleased\n\n## 1.0.1\n\nOne.\n\nTwo.\n\n## 1.0.0\n\nx\n');
+});
+
+test('versions: a CHANGELOG without what changed stops the release; "next" names this repository only', () => {
+    const r = versionRepo();
+    r.change('native/a/hook.js', 'console.log(1);\n');
+    assert.throws(() => writePlan(r.root, plan(components(r.root), [], r.root)), /Unreleased/);
+    r.change('native/b/component.json', JSON.stringify(Object.assign(r.json('b'), { requires: { 'mgu-deploy': 'next' } }), null, 2));
+    assert.throws(() => components(r.root), /names a component of this repository only/);
+});
+
+test('icons: the app\'s entry names <id>.png with the sha256 of the PNG its entry point shows; a tool\'s none', () => {
+    const app = components().find((c) => c.id === 'robertn_waze_cluster');
+    const png = path.join(__dirname, '..', '..', 'apps', 'robertn_waze_cluster', 'package', 'rhmiData', 'variantGroups', 'Common',
+        'images', 'robertn_waze_cluster_icon.png');
+    const sha = require('crypto').createHash('sha256').update(fs.readFileSync(png)).digest('hex');
+    const out = fs.mkdtempSync(path.join(os.tmpdir(), 'mgu-rel-icon-'));
+    fs.writeFileSync(path.join(out, 'a.tgz'), 'x');
+    const entry = catalogEntry(app, path.join(out, 'a.tgz'));
+    assert.strictEqual(entry.icon, 'robertn_waze_cluster.png');
+    assert.strictEqual(entry.iconSha256, sha);
+    components().filter((c) => c.kind === 'tool').forEach((c) => assert.strictEqual(catalogEntry(c, path.join(out, 'a.tgz')).icon, undefined));
+});
+
+test('an app\'s staged tree has no version in its folder name', () => {
+    const app = components().find((c) => c.kind === 'app');
+    assert.ok(!app.tree.includes('@'), app.tree);
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mgu-rel-test-'));
+    const dir = path.join(root, 'apps', 'robertn_x');
+    fs.mkdirSync(path.join(dir, 'robertn_x@1.0.0'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'native'));
+    fs.writeFileSync(path.join(dir, 'release.json'), '{ "build": "true" }');
+    fs.writeFileSync(path.join(dir, 'robertn_x@1.0.0', 'package.json'), '{ "name": "robertn_x", "version": "1.0.0", "mguLocalOnly": true }');
+    fs.writeFileSync(path.join(dir, 'mgu-app.json'), '{ "schema": 1, "id": "robertn_x", "version": "1.0.0", "tree": "robertn_x@1.0.0" }');
+    assert.throws(() => components(root), /without a version in its name/);
 });
 
 let failed = 0;

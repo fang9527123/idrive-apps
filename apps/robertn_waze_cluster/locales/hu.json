@@ -17,13 +17,13 @@
     "Save logs": "Naplók mentése",
     "Not supported on this car": "Ebben az autóban nem támogatott",
     "Unavailable": "Nem elérhető",
-    "Untested version": "Nem tesztelt verzió",
     "Changed by another tool": "Másik eszköz módosította",
     "(after restart)": "(újraindítás után)",
     "Status: {0}": "Állapot: {0}",
     "Connecting…": "Csatlakozás…",
     "Removed after restart": "Újraindítás után eltávolítva",
     "Removed — head unit kept restarting": "Eltávolítva — a fejegység folyamatosan újraindult",
+    "Removed — Android Auto crashed": "Eltávolítva — az Android Auto összeomlott",
     "Patched after restart": "Újraindítás után alkalmazva",
     "Removing patch…": "Javítás eltávolítása…",
     "Patching…": "Javítás alkalmazása…",
@@ -36,7 +36,7 @@
     "Off": "Ki",
     "Starting…": "Indítás…",
     "Showing {0}": "Megjelenítve: {0}",
-    "Waze map": "Waze-térkép",
+    "map": "térkép",
     "Error": "Hiba",
     "Frozen": "Lefagyott",
     "Waiting for the phone": "Várakozás a telefonra",
@@ -66,7 +66,7 @@
     "Not enough space": "Nincs elég hely",
     "Too large to save": "Túl nagy a mentéshez",
     "Save failed": "Sikertelen mentés",
-    "Waze on cluster": "Waze a műszerfalon",
+    "Maps on cluster": "Térkép a műszerfalon",
     "Show on": "Megjelenítés",
     "Cluster": "Műszerfal",
     "HUD (experimental)": "HUD (kísérleti)",
@@ -92,6 +92,8 @@
     "CarPlay Wi-Fi: {0}": "CarPlay Wi-Fi: {0}",
     "5 GHz": "5 GHz",
     "2.4 GHz": "2,4 GHz",
-    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "A hang akadozhat. Az iPhone-on kapcsolja ki, majd be a Wi-Fi-t."
+    "Audio may cut out. On your iPhone, turn Wi-Fi off and on.": "A hang akadozhat. Az iPhone-on kapcsolja ki, majd be a Wi-Fi-t.",
+    "Own settings for this driver": "Saját beállítások ennek a vezetőnek",
+    "Keep HUD map over BMW's pop-ups": "Térkép megtartása a HUD-on a BMW felugró ablakai felett"
   }
 }

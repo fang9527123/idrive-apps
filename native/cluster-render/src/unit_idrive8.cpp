@@ -4,8 +4,11 @@
  * a RAMSES 27 participant (communication user ramses_user, 801 VERIFIED on
  * the car) whose built-in DCSM provider offers each target's scene to the
  * cluster (dcsm27_port.h). The provider has no file descriptor: its events
- * are dispatched every pass, and the loop wakes at least every
- * kDispatchMs. A target's scene goes once its offer has stopped
+ * are dispatched every pass, and while a content is offered or the service
+ * is not at rest (Service::at_rest) the loop wakes at least every
+ * kDispatchMs. With nothing offered the cluster has nothing of ours to
+ * send, and a client's request wakes the loop on its socket. A target's
+ * scene goes once its offer has stopped
  * (graph_ramses27.h). Any crash on the unit restarts the head unit
  * (VERIFIED on the car), the teardown of RAMSES 27 included: once the
  * offers are stopped and the framework is disconnected, the process leaves
@@ -22,8 +25,6 @@
 
 #include <algorithm>
 #include <codecvt>
-#include <fstream>
-#include <iterator>
 #include <locale>
 
 #include "dcsm27_port.h"
@@ -37,6 +38,7 @@
 #include "ramses-framework-api/IDcsmProviderEventHandler.h"
 #include "ramses-framework-api/RamsesFramework.h"
 #include "ramses-framework-api/RamsesFrameworkConfig.h"
+#include "settings.h"
 #include "unit.h"
 
 /* In the unit's libramses 27.0.116r1, not in the open-source headers
@@ -57,7 +59,11 @@ const int kConnectRetryMs = 5000;
 ramses::ContentID content_id(uint64_t c) { return ramses::ContentID(c); }
 
 /* The offers, with a widget's menu entry (its description, order and
- * picture) for a target that has an id8_<name>_description. */
+ * picture) for a target that has an id8_<name>_description, its
+ * background (id8_<name>_background_id) and the cluster views it is shown
+ * in (id8_<name>_layouts). A target with id8_<name>_focus 1 asks the
+ * cluster to show it with every offer: the cluster switches to a widget
+ * that asks by itself, nobody picks it (VERIFIED on the car, below). */
 class ProviderWire : public Dcsm27Wire {
 public:
     ProviderWire(ramses::DcsmProvider &p, const cld::Config &cfg) : p_(p), cfg_(cfg) {}
@@ -66,37 +72,35 @@ public:
     {
         const std::string k = "id8_" + t.name + "_";
         const std::string desc = cfg_.str((k + "description").c_str());
+        const bool background = cfg_.has((k + "background_id").c_str()), layouts = cfg_.has((k + "layouts").c_str());
         ramses::status_t s;
-        if (desc.empty()) {
+        if (desc.empty() && !background && !layouts) {
             s = p_.offerContent(content_id(t.content), ramses::Category(t.slot), ramses::sceneId_t(t.scene_id),
                                 ramses::EDcsmOfferingMode::LocalAndRemote);
         } else {
             ramses::DcsmMetadataCreator md;
-            std::u32string text;
-            try {
-                text = std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t>().from_bytes(desc);
-            } catch (const std::range_error &) {
-                text = U"?";
-            }
-            md.setPreviewDescription(text);
-            md.setWidgetOrder((int32_t)cfg_.num((k + "order").c_str()));
-            const std::string preview = cfg_.str((k + "preview").c_str());
-            std::vector<char> png;
-            if (!preview.empty()) {
-                std::ifstream f(preview, std::ios::binary);
-                png.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
-                if (png.empty())
-                    log_error("target %s: no picture in %s", t.name.c_str(), preview.c_str());
-                else
-                    md.setPreviewImagePng(png.data(), png.size());
-            }
+            if (!desc.empty())
+                menu_entry(t, k, desc, &md);
+            if (background)
+                md.setWidgetBackgroundID((int32_t)cfg_.num((k + "background_id").c_str()));
+            if (layouts)
+                md.setLayoutAvailability((uint8_t)cfg_.num((k + "layouts").c_str()));
             s = p_.offerContentWithMetadata(content_id(t.content), ramses::Category(t.slot),
                                             ramses::sceneId_t(t.scene_id), ramses::EDcsmOfferingMode::LocalAndRemote,
                                             md);
         }
-        if (s != ramses::StatusOK)
+        if (s != ramses::StatusOK) {
             *why = p_.getStatusMessage(s);
-        return s == ramses::StatusOK;
+            return false;
+        }
+        /* The provider keeps the request and sends it once the cluster
+         * assigns the content; it goes with the offer. */
+        if (cfg_.num((k + "focus").c_str()) != 0) {
+            const ramses::status_t f = p_.enableFocusRequest(content_id(t.content), 0);
+            if (f != ramses::StatusOK)
+                log_warn("target %s: focus request refused: %s", t.name.c_str(), p_.getStatusMessage(f));
+        }
+        return true;
     }
 
     bool stop_offer(uint64_t content, std::string *why) override
@@ -116,6 +120,27 @@ public:
     }
 
 private:
+    void menu_entry(const TargetSpec &t, const std::string &k, const std::string &desc, ramses::DcsmMetadataCreator *md)
+    {
+        std::u32string text;
+        try {
+            text = std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t>().from_bytes(desc);
+        } catch (const std::range_error &) {
+            text = U"?";
+        }
+        md->setPreviewDescription(text);
+        md->setWidgetOrder((int32_t)cfg_.num((k + "order").c_str()));
+        const std::string preview = cfg_.str((k + "preview").c_str());
+        if (preview.empty())
+            return;
+        std::vector<char> png;
+        std::string why;
+        if (read_preview(preview, &png, &why))
+            md->setPreviewImagePng(png.data(), png.size());
+        else
+            log_error("target %s: no picture in %s: %s", t.name.c_str(), preview.c_str(), why.c_str());
+    }
+
     ramses::DcsmProvider &p_;
     const cld::Config &cfg_;
 };
@@ -257,7 +282,9 @@ int start(const cld::Config &cfg, char **)
         fds.push_back(pollfd{sig_fd, POLLIN, 0});
         const size_t first = service.poll_fds(&fds);
         const int timeout = service.timeout_ms(cld::now_ms());
-        const int n = poll(fds.data(), fds.size(), timeout < 0 ? kDispatchMs : std::min(timeout, kDispatchMs));
+        const bool quiet = port.idle() && service.at_rest();
+        const int n = poll(fds.data(), fds.size(),
+                           timeout < 0 ? kDispatchMs : quiet ? timeout : std::min(timeout, kDispatchMs));
         if (n < 0 && errno != EINTR)
             break;
         if (fds[0].revents & POLLIN)
